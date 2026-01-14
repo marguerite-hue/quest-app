@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@layer base {
+:root {
+    font-family: 'Quicksand', 'Nunito', -apple-system, BlinkMacSystemFont, 'SF Pro Rounded', system-ui, sans-serif;
+    line-height: 1.6;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+    padding: 0;
+    background: transparent;
+  }
+  
+  #root {
+  min-height: 100vh;
+}
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+/* Y2K/Sims Aesthetic Utilities */
+
+/* Border Radius System - Consistent across app
+ * rounded-3xl (24px) - Main cards, modals, primary buttons, sections
+ * rounded-2xl (16px) - Medium elements, badges, tags, nav buttons, list items
+ * rounded-full (50%) - Circular elements only (avatars, pill buttons)
+ */
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.soft-shadow {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.pill-button {
+  border-radius: 50px;
+  transition: all 0.3s ease;
+}
+
+.pill-button:hover {
+  transform: scale(1.05);
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.float-animation {
+  animation: float 3s ease-in-out infinite;
+  }
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
