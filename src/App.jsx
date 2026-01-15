@@ -104,14 +104,14 @@ function LoginScreen({ onLogin }) {
       >
         {/* Archivus Character avec bulle de dialogue */}
         <div className="flex items-center gap-0 relative z-40 mb-8 justify-center">
-          <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '120px' }}>
+          <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '130px' }}>
             <img
               src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
               alt="Archivus"
               className="object-cover"
               style={{
-                width: '120px',
-                height: '120px',
+                width: '130px',
+                height: '130px',
                 objectPosition: 'center top',
               }}
               onError={(e) => {

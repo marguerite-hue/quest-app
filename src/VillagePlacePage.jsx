@@ -17,18 +17,18 @@ function VillagePlacePage({ user, onBack, onOpenRegistry, onOpenFeed }) {
       <div className="absolute inset-0 bg-black/10 z-0"></div>
       <div className="relative z-10">
       {/* Top Navigation - Matching My Account style */}
-        <div className="sticky top-0 z-50 glass-card border-b border-white/30 py-1">
+        <div className="sticky top-0 z-50 glass-card border-b border-white/30" style={{ paddingTop: '0px', paddingBottom: '0px' }}>
           <div className="flex items-center gap-4" style={{ paddingLeft: '65px', paddingRight: '65px' }}>
           {/* Archivus Character */}
           <div className="flex items-center gap-0 relative z-40 flex-1">
-            <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '120px' }}>
+            <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '130px' }}>
               <img
                 src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
                 alt="Archivus"
                 className="object-cover"
                 style={{
-                  width: '120px',
-                  height: '120px',
+                  width: '130px',
+                  height: '130px',
                   objectPosition: 'center top',
                 }}
                 onError={(e) => {

@@ -84,7 +84,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   const [avatarBackgroundChoice, setAvatarBackgroundChoice] = useState('transparent') // 'transparent' ou 'custom'
   const [avatarBackgroundDescription, setAvatarBackgroundDescription] = useState('')
   const [backgroundType, setBackgroundType] = useState('color')
-  const [backgroundColor, setBackgroundColor] = useState('#87CEEB')
+  const [backgroundColor, setBackgroundColor] = useState('#3d3a3a')
   const [backgroundOpacity, setBackgroundOpacity] = useState(100)
   const [backgroundEffect, setBackgroundEffect] = useState('none')
   const [backgroundImage, setBackgroundImage] = useState(null)
@@ -147,13 +147,14 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   const [draggedQuest, setDraggedQuest] = useState(null)
   const [resizedQuest, setResizedQuest] = useState(null)
   const [rotatedQuest, setRotatedQuest] = useState(null)
-  const [villageEchos, setVillageEchos] = useState([
-    { id: 1, message: '✨ Un nouveau joueur a rejoint le village !', time: 'Il y a 2 min', type: 'info' },
-    { id: 2, message: '🏆 Quelqu\'un a complété une quête épique !', time: 'Il y a 5 min', type: 'achievement' },
-    { id: 3, message: '🎨 Un nouveau design de tente a été créé !', time: 'Il y a 10 min', type: 'creative' },
-  ])
+  const [villageEchos, setVillageEchos] = useState([])
   const [questBookImageUrl, setQuestBookImageUrl] = useState(null)
   const [villageEchosOpen, setVillageEchosOpen] = useState(false)
+  const [progressionPanelOpen, setProgressionPanelOpen] = useState(false)
+  const [selectedProgressQuest, setSelectedProgressQuest] = useState(null)
+  const [questCheckpoints, setQuestCheckpoints] = useState({})
+  const [liveEchoNotifications, setLiveEchoNotifications] = useState([])
+  const [lastEchoCheck, setLastEchoCheck] = useState(null)
   const [questBookPosition, setQuestBookPosition] = useState({ x: 0, y: 0, scale: 1, rotation: 0 })
   const [draggedQuestBook, setDraggedQuestBook] = useState(false)
   const [resizedQuestBook, setResizedQuestBook] = useState(false)
@@ -167,6 +168,14 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
     loadProfile()
     loadQuestBookImage()
     loadAllPlayers()
+    loadVillageEchos()
+    
+    // Refresh echos every 30 seconds
+    const interval = setInterval(() => {
+      loadVillageEchos()
+    }, 30000)
+    
+    return () => clearInterval(interval)
   }, [user])
 
   const loadAllPlayers = async () => {
@@ -205,6 +214,235 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       console.error('Error loading players:', error)
     }
   }
+
+  const loadVillageEchos = async () => {
+    try {
+      const echos = []
+      
+      // 1. Récupérer les quêtes complétées récemment (dernières 24h)
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const { data: recentCompletedQuests, error: questsError } = await supabase
+        .from('quests')
+        .select('id, title, created_by, created_at')
+        .eq('status', 'completed')
+        .gte('created_at', oneDayAgo)
+        .neq('created_by', user?.email)
+        .order('created_at', { ascending: false })
+        .limit(5)
+      
+      if (questsError) throw questsError
+      
+      // Récupérer les profils des utilisateurs pour les quêtes
+      for (const quest of recentCompletedQuests || []) {
+        // Essayer de trouver le profil via l'email dans created_by
+        const { data: userProfile } = await supabase
+          .from('user_profiles')
+          .select('username, email')
+          .eq('email', quest.created_by)
+          .maybeSingle()
+        
+        const username = userProfile?.username || quest.created_by?.split('@')[0] || 'Un aventurier'
+        const timeDiff = Date.now() - new Date(quest.created_at).getTime()
+        const timeAgo = formatTimeAgo(timeDiff)
+        
+        echos.push({
+          id: `quest-${quest.id}`,
+          message: `🏆 ${username} a complété la quête "${quest.title}" !`,
+          time: timeAgo,
+          type: 'achievement'
+        })
+      }
+      
+      // 2. Récupérer les nouveaux joueurs (dernières 24h)
+      const { data: newPlayers, error: playersError } = await supabase
+        .from('user_profiles')
+        .select('id, username, email, created_at')
+        .gte('created_at', oneDayAgo)
+        .neq('id', user?.id)
+        .order('created_at', { ascending: false })
+        .limit(3)
+      
+      if (playersError) throw playersError
+      
+      for (const player of newPlayers || []) {
+        const username = player.username || player.email?.split('@')[0] || 'Un aventurier'
+        const timeDiff = Date.now() - new Date(player.created_at).getTime()
+        const timeAgo = formatTimeAgo(timeDiff)
+        
+        echos.push({
+          id: `player-${player.id}`,
+          message: `✨ ${username} a rejoint le village !`,
+          time: timeAgo,
+          type: 'info'
+        })
+      }
+      
+      // Les échos sont déjà triés par ordre chronologique décroissant lors des requêtes
+      const recentEchos = echos.slice(0, 10) // Garder seulement les 10 plus récents
+      setVillageEchos(recentEchos)
+      
+      // Detect new echos and show as live notifications
+      if (recentEchos.length > 0 && lastEchoCheck !== null) {
+        // Find new echos since last check
+        const newEchos = []
+        for (const echo of recentEchos) {
+          if (echo.id === lastEchoCheck) break
+          newEchos.push(echo)
+        }
+        
+        // Show new echos as live notifications (one at a time with delay)
+        newEchos.reverse().forEach((echo, index) => {
+          setTimeout(() => {
+            showLiveNotification(echo)
+          }, index * 3000) // 3 seconds between each notification
+        })
+        
+        // Update last check
+        if (recentEchos.length > 0) {
+          setLastEchoCheck(recentEchos[0].id)
+        }
+      } else if (recentEchos.length > 0 && lastEchoCheck === null) {
+        // First load, set the check but don't show notifications
+        setLastEchoCheck(recentEchos[0].id)
+      }
+    } catch (error) {
+      console.error('Error loading village echos:', error)
+      setVillageEchos([])
+    }
+  }
+
+  // Show a live notification that auto-disappears
+  const showLiveNotification = (echo) => {
+    const notificationId = `live-${echo.id}-${Date.now()}`
+    const notification = { ...echo, notificationId }
+    
+    setLiveEchoNotifications(prev => [...prev, notification])
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      setLiveEchoNotifications(prev => prev.filter(n => n.notificationId !== notificationId))
+    }, 5000)
+  }
+
+  const formatTimeAgo = (milliseconds) => {
+    const minutes = Math.floor(milliseconds / 60000)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+    
+    if (days > 0) {
+      return `Il y a ${days} jour${days > 1 ? 's' : ''}`
+    } else if (hours > 0) {
+      return `Il y a ${hours} heure${hours > 1 ? 's' : ''}`
+    } else if (minutes > 0) {
+      return `Il y a ${minutes} min`
+    } else {
+      return 'À l\'instant'
+    }
+  }
+
+  // Generate checkpoints for a quest based on timeline
+  const generateCheckpoints = (quest) => {
+    const checkpoints = []
+    const startDate = new Date(quest.created_at)
+    
+    switch (quest.timeline) {
+      case 'today':
+        // 1 checkpoint for today
+        checkpoints.push({ date: startDate, label: 'Aujourd\'hui', completed: false })
+        break
+      
+      case 'this week':
+        // 7 checkpoints (1 per day)
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(startDate)
+          date.setDate(date.getDate() + i)
+          checkpoints.push({
+            date,
+            label: `Jour ${i + 1}`,
+            completed: false
+          })
+        }
+        break
+      
+      case 'this month':
+        // 4 checkpoints (1 per week)
+        for (let i = 0; i < 4; i++) {
+          const date = new Date(startDate)
+          date.setDate(date.getDate() + (i * 7))
+          checkpoints.push({
+            date,
+            label: `Semaine ${i + 1}`,
+            completed: false
+          })
+        }
+        break
+      
+      case 'this year':
+        // 12 checkpoints (1 per month)
+        const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
+        for (let i = 0; i < 12; i++) {
+          const date = new Date(startDate)
+          date.setMonth(date.getMonth() + i)
+          checkpoints.push({
+            date,
+            label: months[date.getMonth()],
+            completed: false
+          })
+        }
+        break
+      
+      default:
+        checkpoints.push({ date: startDate, label: 'Checkpoint', completed: false })
+    }
+    
+    return checkpoints
+  }
+
+  // Initialize checkpoints for a quest if not exists
+  const getQuestCheckpoints = (questId) => {
+    if (questCheckpoints[questId]) {
+      return questCheckpoints[questId]
+    }
+    const quest = quests.find(q => q.id === questId)
+    if (quest) {
+      return generateCheckpoints(quest)
+    }
+    return []
+  }
+
+  // Toggle checkpoint completion
+  const toggleCheckpoint = async (questId, checkpointIndex) => {
+    const updatedCheckpoints = { ...questCheckpoints }
+    if (!updatedCheckpoints[questId]) {
+      const quest = quests.find(q => q.id === questId)
+      if (quest) {
+        updatedCheckpoints[questId] = generateCheckpoints(quest)
+      }
+    }
+    
+    if (updatedCheckpoints[questId] && updatedCheckpoints[questId][checkpointIndex]) {
+      updatedCheckpoints[questId][checkpointIndex].completed = !updatedCheckpoints[questId][checkpointIndex].completed
+      setQuestCheckpoints(updatedCheckpoints)
+      
+      // Save to profile
+      await saveProfile({
+        quest_checkpoints: updatedCheckpoints
+      })
+    }
+  }
+
+  // Load checkpoints from profile
+  useEffect(() => {
+    if (profile?.quest_checkpoints) {
+      setQuestCheckpoints(profile.quest_checkpoints)
+    }
+  }, [profile])
+
+  // Get active recurring quests (not completed, with timeline)
+  const recurringQuests = quests.filter(q => 
+    q.status !== 'completed' && 
+    (q.timeline === 'this week' || q.timeline === 'this month' || q.timeline === 'this year')
+  )
 
   const loadQuestBookImage = async () => {
     try {
@@ -1083,8 +1321,10 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         avatar_description: null,
       })
 
-      // Update local state immediately
+      // Update local state immediately - reset to default state
       setGeneratedAvatar(null)
+      setSelectedUniverse(null)
+      setAvatarDescription('')
       setProfile(prev => prev ? { ...prev, avatar_url: null, avatar_universe: null, avatar_description: null } : null)
       setSuccessMessage('Avatar supprimé avec succès ! ✨')
       setTimeout(() => setSuccessMessage(''), 3000)
@@ -1154,8 +1394,8 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       {arrangeMode && <div className="fixed inset-0 arrange-grid-full pointer-events-none" style={{ zIndex: 0 }}></div>}
       
       {/* Top Navigation - Y2K Style */}
-        <div className="sticky top-0 z-50 glass-card border-b border-white/30 py-1">
-          <div className="flex items-center gap-4" style={{ paddingLeft: '65px', paddingRight: '65px' }}>
+        <div className="sticky top-0 z-50 glass-card border-b border-white/30" style={{ paddingTop: '0px', paddingBottom: '0px' }}>
+          <div className="flex items-center justify-between gap-4" style={{ paddingLeft: '65px', paddingRight: '65px' }}>
           <button
             onClick={onGoToVillagePlace || onBack}
             className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
@@ -1167,15 +1407,15 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           </button>
           
           {/* Archivus Character */}
-          <div className="flex items-center gap-0 relative z-40 ml-6">
-            <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '120px' }}>
+          <div className="flex items-center gap-0 relative z-40" style={{ marginLeft: '-576px' }}>
+            <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '130px' }}>
               <img
                 src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
                 alt="Archivus"
                 className="object-cover"
                 style={{
-                  width: '120px',
-                  height: '120px',
+                  width: '130px',
+                  height: '130px',
                   objectPosition: 'center top',
                 }}
                 onError={(e) => {
@@ -1214,6 +1454,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
               </p>
             </div>
           </div>
+
         </div>
       </div>
 
@@ -1229,109 +1470,276 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         </div>
       )}
 
-      {/* Écho du Village - Fixed Left (Aligned with Tes compagnons) */}
+      {/* Écho du Village Button - Bottom Left with Live Notifications */}
+      <div className="fixed z-50 flex flex-col items-start gap-3" style={{ bottom: '24px', left: '35px' }}>
+        {/* Live notifications stack - appear above button */}
+        <div className="flex flex-col gap-2 max-h-[400px] overflow-hidden">
+          {liveEchoNotifications.map((notification) => (
+            <div
+              key={notification.notificationId}
+              className="px-4 py-3 rounded-2xl max-w-sm fade-in cursor-pointer hover:scale-105 transition-all"
+              onClick={() => {
+                const isClickable = (notification.type === 'achievement' || 
+                  notification.message.includes('complété') || 
+                  notification.message.includes('quête') || 
+                  notification.message.includes('commenté') || 
+                  notification.message.includes('réagi') ||
+                  notification.message.includes('réaction') ||
+                  (notification.type === 'info' && notification.message.includes('joueur')))
+                
+                if (isClickable) {
+                  handleNotificationClick(notification)
+                }
+              }}
+              style={{
+                background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.98), rgba(245, 235, 220, 0.98))',
+                border: '2px solid rgba(139, 115, 85, 0.4)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              }}
+            >
+              <div className="text-sm font-semibold text-amber-900 mb-1">
+                {notification.message}
+              </div>
+              <div className="text-xs text-amber-700/70 font-medium">
+                {notification.time}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Écho du Village Button */}
+        <button
+          onClick={() => setVillageEchosOpen(true)}
+          className="px-6 py-3 rounded-3xl flex items-center gap-2 relative transition-all hover:scale-105"
+          style={{
+            fontFamily: "'Cinzel Decorative', serif",
+            background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.2), rgba(126, 34, 206, 0.2))',
+            backdropFilter: 'blur(8px)',
+            border: '2px solid rgba(147, 51, 234, 0.4)',
+            color: '#f4c99c',
+            boxShadow: '0 2px 12px rgba(147, 51, 234, 0.15)',
+            fontWeight: '600',
+          }}
+        >
+          <span className="text-xl">📜</span>
+          <span>Écho du Village</span>
+        </button>
+      </div>
+
+      {/* Écho du Village Modal */}
+      {villageEchosOpen && (
+        <div 
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-end justify-start z-50" 
+          style={{ padding: '16px', paddingBottom: '24px', paddingLeft: '35px' }}
+          onClick={() => setVillageEchosOpen(false)}
+        >
+          <div 
+            className="rounded-2xl p-6 max-w-md w-full max-h-[70vh] overflow-y-auto soft-shadow fade-in"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
+              border: '2px solid rgba(139, 115, 85, 0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+              marginBottom: '80px',
+            }}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 
+                className="text-2xl font-bold flex items-center gap-2"
+                style={{
+                  fontFamily: "'Cinzel Decorative', serif",
+                  color: '#4b4136',
+                }}
+              >
+                <span className="text-2xl">📜</span>
+                <span>Écho du Village</span>
+              </h2>
+              <button 
+                onClick={() => setVillageEchosOpen(false)} 
+                className="text-3xl font-semibold hover:scale-110 transition-transform"
+                style={{ color: '#4b4136' }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="space-y-2">
+              {villageEchos.length > 0 ? (
+                villageEchos.map((echo) => {
+                  // Déterminer si la notification est cliquable
+                  const isClickable = (echo.type === 'achievement' || 
+                    echo.message.includes('complété') || 
+                    echo.message.includes('quête') || 
+                    echo.message.includes('commenté') || 
+                    echo.message.includes('réagi') ||
+                    echo.message.includes('réaction') ||
+                    (echo.type === 'info' && echo.message.includes('joueur')))
+                  
+                  return (
+                    <div
+                      key={echo.id}
+                      onClick={() => {
+                        if (isClickable) {
+                          handleNotificationClick(echo)
+                          setVillageEchosOpen(false)
+                        }
+                      }}
+                      className={`p-3 rounded-2xl bg-white/40 border border-amber-800/20 fade-in ${
+                        isClickable ? 'cursor-pointer hover:bg-white/60 transition-all' : ''
+                      }`}
+                      style={{
+                        animationDelay: `${echo.id * 0.1}s`,
+                      }}
+                    >
+                      <div className="text-sm font-semibold text-amber-900 mb-1">
+                        {echo.message}
+                      </div>
+                      <div className="text-xs text-amber-700/70 font-medium">
+                        {echo.time}
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="text-sm text-amber-800/60 text-center py-4 font-medium">
+                  Aucun écho pour le moment...
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ta Progression - Fixed Left */}
       <div className="fixed z-40" style={{ top: '162px', width: '320px', left: '35px' }}>
         <div 
           className={`glass-card rounded-3xl soft-shadow relative overflow-hidden transition-all duration-300 ${
-            villageEchosOpen ? 'p-4' : 'p-3'
+            progressionPanelOpen ? 'p-4' : 'p-3'
           }`}
           style={{
             background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.9), rgba(245, 235, 220, 0.9))',
             border: '2px solid rgba(139, 115, 85, 0.3)',
             boxShadow: 'inset 0 0 20px rgba(139, 115, 85, 0.1), 0 8px 32px rgba(0,0,0,0.1)',
+            maxHeight: progressionPanelOpen ? '400px' : 'auto',
           }}
         >
-              {/* Parchemin texture effect */}
-              <div className="absolute inset-0 opacity-10" style={{
-                backgroundImage: `
-                  repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139, 115, 85, 0.1) 2px, rgba(139, 115, 85, 0.1) 4px),
-                  repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(139, 115, 85, 0.1) 2px, rgba(139, 115, 85, 0.1) 4px)
-                `,
-                pointerEvents: 'none',
-              }}></div>
-              
-              <div className="relative z-10">
-                <div 
-                  className={`text-lg font-semibold text-center flex items-center justify-center gap-2 cursor-pointer hover:opacity-80 transition-opacity ${
-                    villageEchosOpen ? 'mb-3' : 'mb-0'
-                  }`}
-                  onClick={() => setVillageEchosOpen(!villageEchosOpen)}
-                  style={{ 
-                    fontFamily: "'Cinzel Decorative', serif",
-                    color: '#4b4136'
-                  }}
+          {/* Parchemin texture effect */}
+          <div className="absolute inset-0 opacity-10" style={{
+            backgroundImage: `
+              repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139, 115, 85, 0.1) 2px, rgba(139, 115, 85, 0.1) 4px),
+              repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(139, 115, 85, 0.1) 2px, rgba(139, 115, 85, 0.1) 4px)
+            `,
+            pointerEvents: 'none',
+          }}></div>
+          
+          <div className="relative z-10">
+            <div 
+              className={`text-lg font-semibold text-center flex items-center justify-center gap-2 cursor-pointer hover:opacity-80 transition-opacity ${
+                progressionPanelOpen ? 'mb-3' : 'mb-0'
+              }`}
+              onClick={() => setProgressionPanelOpen(!progressionPanelOpen)}
+              style={{ 
+                fontFamily: "'Cinzel Decorative', serif",
+                color: '#4b4136'
+              }}
+            >
+              <span className="text-2xl">🗺️</span>
+              <span>Ta Progression</span>
+              <span
+                className="ml-2 text-amber-800 transition-transform duration-300"
+                style={{
+                  transform: progressionPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                }}
+              >
+                <svg 
+                  className="w-5 h-5" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
                 >
-                  <span className="text-2xl">📜</span>
-                  <span>Écho du Village</span>
-                  <span
-                    className="ml-2 text-amber-800 transition-transform duration-300"
-                    style={{
-                      transform: villageEchosOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                    }}
-                  >
-                    <svg 
-                      className="w-5 h-5" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round" 
-                        strokeWidth={2} 
-                        d="M19 9l-7 7-7-7" 
-                      />
-                    </svg>
-                  </span>
-                </div>
-                
-                <div 
-                  className="overflow-hidden transition-all duration-300 ease-in-out"
-                  style={{
-                    maxHeight: villageEchosOpen ? '256px' : '0px',
-                    opacity: villageEchosOpen ? 1 : 0,
-                  }}
-                >
-                  <div className="space-y-2 overflow-y-auto scrollbar-thin scrollbar-thumb-amber-800/30 scrollbar-track-transparent">
-                    {villageEchos.length > 0 ? (
-                      villageEchos.map((echo) => {
-                        // Déterminer si la notification est cliquable
-                        const isClickable = (echo.type === 'achievement' || 
-                          echo.message.includes('complété') || 
-                          echo.message.includes('quête') || 
-                          echo.message.includes('commenté') || 
-                          echo.message.includes('réagi') ||
-                          echo.message.includes('réaction') ||
-                          (echo.type === 'info' && echo.message.includes('joueur')))
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M19 9l-7 7-7-7" 
+                  />
+                </svg>
+              </span>
+            </div>
+            
+            <div 
+              className="overflow-hidden transition-all duration-300 ease-in-out"
+              style={{
+                maxHeight: progressionPanelOpen ? '320px' : '0px',
+                opacity: progressionPanelOpen ? 1 : 0,
+              }}
+            >
+              <div className="space-y-3 overflow-y-auto scrollbar-thin scrollbar-thumb-amber-800/30 scrollbar-track-transparent">
+                {recurringQuests.length > 0 ? (
+                  recurringQuests.map((quest) => {
+                    const checkpoints = getQuestCheckpoints(quest.id)
+                    const completedCount = checkpoints.filter(c => c.completed).length
+                    const progressPercentage = (completedCount / checkpoints.length) * 100
+                    
+                    return (
+                      <div
+                        key={quest.id}
+                        className="p-3 rounded-2xl bg-white/40 border border-amber-800/20 cursor-pointer hover:bg-white/60 transition-all"
+                        onClick={() => setSelectedProgressQuest(selectedProgressQuest === quest.id ? null : quest.id)}
+                      >
+                        <div className="text-sm font-semibold text-amber-900 mb-1">
+                          {quest.title}
+                        </div>
+                        <div className="text-xs text-amber-700/70 font-medium mb-2">
+                          {completedCount}/{checkpoints.length} checkpoints
+                        </div>
                         
-                        return (
-                          <div
-                            key={echo.id}
-                            onClick={() => isClickable && handleNotificationClick(echo)}
-                            className={`p-2 rounded-2xl bg-white/40 border border-amber-800/20 fade-in ${
-                              isClickable ? 'cursor-pointer hover:bg-white/60 transition-all' : ''
-                            }`}
-                            style={{
-                              animationDelay: `${echo.id * 0.1}s`,
-                            }}
-                          >
-                            <div className="text-xs font-semibold text-amber-900 mb-1">
-                              {echo.message}
-                            </div>
-                            <div className="text-xs text-amber-700/70 font-medium">
-                              {echo.time}
+                        {/* Progress bar */}
+                        <div className="w-full h-2 bg-amber-200/50 rounded-full overflow-hidden mb-2">
+                          <div 
+                            className="h-full bg-gradient-to-r from-amber-500 to-amber-600 transition-all duration-500"
+                            style={{ width: `${progressPercentage}%` }}
+                          ></div>
+                        </div>
+                        
+                        {/* Checkpoints detail (expandable) */}
+                        {selectedProgressQuest === quest.id && (
+                          <div className="mt-2 pt-2 border-t border-amber-800/20">
+                            <div className="grid grid-cols-6 gap-1">
+                              {checkpoints.map((checkpoint, index) => (
+                                <button
+                                  key={index}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleCheckpoint(quest.id, index)
+                                  }}
+                                  className="aspect-square rounded-lg flex items-center justify-center text-xs font-semibold transition-all hover:scale-110"
+                                  style={{
+                                    background: checkpoint.completed 
+                                      ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.8), rgba(22, 163, 74, 0.8))'
+                                      : 'rgba(255, 255, 255, 0.6)',
+                                    border: '1px solid rgba(139, 115, 85, 0.3)',
+                                    color: checkpoint.completed ? '#fff' : '#78350f',
+                                  }}
+                                  title={checkpoint.label}
+                                >
+                                  {checkpoint.completed ? '✓' : (index + 1)}
+                                </button>
+                              ))}
                             </div>
                           </div>
-                        )
-                      })
-                    ) : (
-                      <div className="text-sm text-amber-800/60 text-center py-4 font-medium">
-                        Aucun écho pour le moment...
+                        )}
                       </div>
-                    )}
+                    )
+                  })
+                ) : (
+                  <div className="text-sm text-amber-800/60 text-center py-4 font-medium">
+                    Aucune quête récurrente en cours...
                   </div>
-                </div>
+                )}
               </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1352,10 +1760,22 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         <div 
           className="relative" 
           style={{ width: '192px', height: '192px' }}
+          onMouseLeave={() => {
+            avatarMenuTimeoutRef.current = setTimeout(() => {
+              setAvatarMenuOpen(false)
+            }, 300)
+          }}
+          onMouseEnter={() => {
+            if (avatarMenuTimeoutRef.current) {
+              clearTimeout(avatarMenuTimeoutRef.current)
+              avatarMenuTimeoutRef.current = null
+            }
+          }}
         >
           <div 
             ref={avatarRef}
-            className={`w-48 h-48 rounded-full relative overflow-visible ${
+            onClick={() => setAvatarMenuOpen(!avatarMenuOpen)}
+            className={`w-48 h-48 rounded-full relative overflow-visible cursor-pointer hover:scale-105 transition-transform ${
               !generatedAvatar && !profile?.avatar_url ? 'highlight-avatar' : ''
             }`}
             style={{
@@ -1399,6 +1819,109 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
               </div>
             )}
           </div>
+
+          {/* Avatar Menu */}
+          {avatarMenuOpen && (
+            <div className="absolute right-full mr-4 top-1/2 transform -translate-y-1/2 z-50 space-y-3">
+              {/* Change Avatar */}
+              <div className="relative group">
+                <button
+                  onClick={() => {
+                    handleUpdateAvatar()
+                    setAvatarMenuOpen(false)
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.95)'
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = ''
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = ''
+                  }}
+                  className="glass-card rounded-full p-3 soft-shadow hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer"
+                  style={{
+                    background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
+                    border: '2px solid rgba(139, 115, 85, 0.3)',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                    width: '48px',
+                    height: '48px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#4b4136', pointerEvents: 'none' }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <div className="absolute right-full mr-3 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-[70]">
+                  <div 
+                    className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold"
+                    style={{
+                      background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
+                      border: '2px solid rgba(139, 115, 85, 0.3)',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                      color: '#4b4136',
+                    }}
+                  >
+                    Change ton Avatar
+                  </div>
+                </div>
+              </div>
+              
+              {/* Remove Avatar */}
+              <div className="relative group">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (window.confirm('Êtes-vous sûr de vouloir supprimer votre avatar ?')) {
+                      handleRemoveAvatar()
+                    }
+                    setAvatarMenuOpen(false)
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    e.currentTarget.style.transform = 'scale(0.95)'
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = ''
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = ''
+                  }}
+                  className="glass-card rounded-full p-3 soft-shadow hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer"
+                  style={{
+                    background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
+                    border: '2px solid rgba(139, 115, 85, 0.3)',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                    width: '48px',
+                    height: '48px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#dc2626', pointerEvents: 'none' }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+                <div className="absolute right-full mr-3 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-[70]">
+                  <div 
+                    className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold"
+                    style={{
+                      background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
+                      border: '2px solid rgba(139, 115, 85, 0.3)',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                      color: '#dc2626',
+                    }}
+                  >
+                    Supprime ton Avatar
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Tes compagnons - Below Avatar */}
@@ -1470,7 +1993,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                   Ton campement semble bien calme...
                 </p>
                 <p className="text-xs italic" style={{ color: '#4b4136' }}>
-                  Les meilleures aventures se vivent à plusieurs ! Invite des amis à te rejoindre pour partager vos quêtes et créer votre propre légende.
+                  Les meilleures aventures se vivent à plusieurs ! Invite des amis à te rejoindre pour partager vos quêtes et entrer dans la légende.
                 </p>
               </div>
             )}
@@ -1624,137 +2147,6 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           )}
         </div>
 
-        {/* Spacing between Aménage ta Tente and Ton Aventurier */}
-        <div style={{ height: '2px' }}></div>
-
-        {/* Ton Aventurier Menu */}
-        <div 
-          className="relative w-full" 
-          style={{ width: '240px', marginTop: '-10px' }}
-          onMouseLeave={() => {
-            avatarMenuTimeoutRef.current = setTimeout(() => {
-              setAvatarMenuOpen(false)
-            }, 300)
-          }}
-          onMouseEnter={() => {
-            if (avatarMenuTimeoutRef.current) {
-              clearTimeout(avatarMenuTimeoutRef.current)
-              avatarMenuTimeoutRef.current = null
-            }
-          }}
-        >
-          <button
-            onClick={() => setAvatarMenuOpen(!avatarMenuOpen)}
-            className="pill-button glass-card px-4 py-3 rounded-3xl font-semibold transition-all soft-shadow flex items-center justify-center gap-2 bg-gradient-to-r from-blue-200/80 via-purple-200/80 to-blue-200/80 hover:from-blue-300/80 hover:via-purple-300/80 hover:to-blue-300/80 w-full"
-            style={{ 
-              color: '#f4c99c',
-              fontFamily: "'Cinzel Decorative', serif",
-            }}
-          >
-            <span className="text-xl">⚔️</span>
-            <span>Ton Aventurier</span>
-          </button>
-
-          {avatarMenuOpen && (
-            <div className="absolute right-full mr-4 top-1/2 transform -translate-y-1/2 z-50 space-y-3">
-              {/* Change Avatar */}
-              <div className="relative group">
-                <button
-                  onClick={() => {
-                    handleUpdateAvatar()
-                    setAvatarMenuOpen(false)
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.95)'
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = ''
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = ''
-                  }}
-                  className="glass-card rounded-full p-3 soft-shadow hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer"
-                  style={{
-                    background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                    border: '2px solid rgba(139, 115, 85, 0.3)',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                    width: '48px',
-                    height: '48px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#4b4136', pointerEvents: 'none' }}>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-                <div className="absolute right-full mr-3 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-[70]">
-                  <div 
-                    className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold"
-                    style={{
-                      background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                      border: '2px solid rgba(139, 115, 85, 0.3)',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                      color: '#4b4136',
-                    }}
-                  >
-                    Change ton Avatar
-                  </div>
-                </div>
-              </div>
-              
-              {/* Remove Avatar */}
-              <div className="relative group">
-                <button
-                  onClick={() => {
-                    if (window.confirm('Êtes-vous sûr de vouloir supprimer votre avatar ?')) {
-                      handleRemoveAvatar()
-                    }
-                    setAvatarMenuOpen(false)
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.95)'
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = ''
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = ''
-                  }}
-                  className="glass-card rounded-full p-3 soft-shadow hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer"
-                  style={{
-                    background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                    border: '2px solid rgba(139, 115, 85, 0.3)',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                    width: '48px',
-                    height: '48px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#dc2626', pointerEvents: 'none' }}>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-                <div className="absolute right-full mr-3 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-[70]">
-                  <div 
-                    className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold"
-                    style={{
-                      background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                      border: '2px solid rgba(139, 115, 85, 0.3)',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                      color: '#dc2626',
-                    }}
-                  >
-                    Supprime ton Avatar
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Quest Book - Carnet de Quêtes avec image - Above XP Bar */}
@@ -2813,75 +3205,270 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         </div>
       )}
 
-      {/* Settings Modal (Background Customization) - Sims Style */}
+      {/* Settings Modal (Background Customization) - Style harmonisé */}
       {showSettingsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowSettingsModal(false)}>
-          <div className="sims-card bg-gradient-to-b from-white to-gray-100 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-3xl font-black text-pink-900 uppercase">🎨 Customize Your Space</h2>
-              <button onClick={() => setShowSettingsModal(false)} className="text-3xl font-black hover:scale-110 transition-transform">×</button>
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowSettingsModal(false)}>
+          <div 
+            className="rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto soft-shadow" 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
+              border: '2px solid rgba(139, 115, 85, 0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+            }}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h2 
+                className="text-2xl font-bold"
+                style={{
+                  fontFamily: "'Cinzel Decorative', serif",
+                  color: '#4b4136',
+                }}
+              >
+                🖼️ Personnalise le fond de ta tente
+              </h2>
+              <button 
+                onClick={() => setShowSettingsModal(false)} 
+                className="text-3xl font-semibold hover:scale-110 transition-transform"
+                style={{ color: '#4b4136' }}
+              >
+                ×
+              </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="sims-card border-6 border-pink-600 rounded-xl p-4 bg-gradient-to-b from-pink-100 to-pink-200">
-                <h3 className="font-black text-lg mb-2 uppercase text-sm">📷 Upload Photo</h3>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="mb-2 text-xs"
-                />
-                {backgroundImage && (
-                  <img src={backgroundImage} alt="Preview" className="w-full h-32 object-cover rounded-xl border-4 border-pink-600 shadow-md" />
+            {/* Upload Photo Section */}
+            <div 
+              className="rounded-xl p-4 mb-4"
+              style={{
+                background: 'rgba(255, 255, 255, 0.4)',
+                border: '2px solid rgba(139, 115, 85, 0.2)',
+              }}
+            >
+              <h3 
+                className="text-lg font-semibold mb-3"
+                style={{
+                  fontFamily: "'Cinzel Decorative', serif",
+                  color: '#4b4136',
+                }}
+              >
+                📷 Upload une photo personnelle
+              </h3>
+              
+              <div className="flex flex-col gap-3">
+                <label 
+                  className="cursor-pointer inline-block"
+                  style={{
+                    fontFamily: "'Cormorant Garamond', serif",
+                  }}
+                >
+                  <div
+                    className="px-6 py-3 rounded-xl font-semibold text-center transition-all hover:scale-105"
+                    style={{
+                      background: 'linear-gradient(to bottom, rgba(139, 115, 85, 0.9), rgba(101, 84, 62, 0.9))',
+                      border: '2px solid rgba(184, 134, 11, 0.6)',
+                      color: '#fef3c7',
+                      fontFamily: "'Cinzel Decorative', serif",
+                      boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+                    }}
+                  >
+                    📁 Choisir une image
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                {backgroundImage && backgroundType === 'image' && (
+                  <div className="relative">
+                    <img 
+                      src={backgroundImage} 
+                      alt="Fond actuel" 
+                      className="w-full h-48 object-cover rounded-xl border-2 border-amber-800/30 shadow-md" 
+                    />
+                    <button
+                      onClick={async () => {
+                        setBackgroundImage(null)
+                        setBackgroundType('color')
+                        setBackgroundColor('#3d3a3a')
+                        await saveProfile({
+                          background_type: 'color',
+                          background_value: '#3d3a3a',
+                          background_image: null,
+                        })
+                      }}
+                      className="absolute top-2 right-2 px-3 py-1 rounded-lg font-semibold text-sm transition-all hover:scale-105"
+                      style={{
+                        background: 'linear-gradient(to bottom, rgba(220, 38, 38, 0.9), rgba(185, 28, 28, 0.9))',
+                        border: '2px solid rgba(220, 38, 38, 0.6)',
+                        color: '#fff',
+                        fontFamily: "'Cinzel Decorative', serif",
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                      }}
+                    >
+                      🗑️ Supprimer
+                    </button>
+                  </div>
                 )}
               </div>
+            </div>
 
-              <div className="sims-card border-6 border-pink-600 rounded-xl p-4 bg-gradient-to-b from-pink-100 to-pink-200">
-                <h3 className="font-bold text-lg mb-2">🎨 Color Picker</h3>
-                <input
-                  type="color"
-                  value={backgroundColor}
-                  onChange={(e) => {
-                    setBackgroundColor(e.target.value)
+            {/* Predefined Backgrounds Section */}
+            <div 
+              className="rounded-xl p-4"
+              style={{
+                background: 'rgba(255, 255, 255, 0.4)',
+                border: '2px solid rgba(139, 115, 85, 0.2)',
+              }}
+            >
+              <h3 
+                className="text-lg font-semibold mb-3"
+                style={{
+                  fontFamily: "'Cinzel Decorative', serif",
+                  color: '#4b4136',
+                }}
+              >
+                🎨 Ou choisis un fond prédéfini
+              </h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                {/* Fond 1 : Gris foncé (défaut) */}
+                <button
+                  onClick={async () => {
+                    setBackgroundColor('#3d3a3a')
                     setBackgroundType('color')
-                    saveProfile({
+                    setBackgroundImage(null)
+                    setBackgroundOpacity(100)
+                    await saveProfile({
                       background_type: 'color',
-                      background_value: e.target.value,
+                      background_value: '#3d3a3a',
+                      background_image: null,
                     })
                   }}
-                  className="w-full h-12 mb-2 rounded border-2 border-pink-400"
-                />
-                <label className="block text-sm font-bold mb-1">Opacity: {backgroundOpacity}%</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={backgroundOpacity}
-                  onChange={(e) => {
-                    setBackgroundOpacity(parseInt(e.target.value))
-                    saveProfile({
-                      background_type: 'color',
-                      background_value: backgroundColor,
-                    })
+                  className="relative h-24 rounded-xl border-2 transition-all hover:scale-105 hover:border-amber-600"
+                  style={{
+                    backgroundColor: '#3d3a3a',
+                    borderColor: backgroundColor === '#3d3a3a' && backgroundType === 'color' ? 'rgba(184, 134, 11, 0.8)' : 'rgba(139, 115, 85, 0.3)',
+                    boxShadow: backgroundColor === '#3d3a3a' && backgroundType === 'color' ? '0 0 15px rgba(184, 134, 11, 0.5)' : 'none',
                   }}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="sims-card border-6 border-pink-600 rounded-xl p-4 bg-gradient-to-b from-pink-100 to-pink-200">
-                <h3 className="font-black text-lg mb-2 uppercase text-sm">✨ Visual Effects</h3>
-                <select
-                  value={backgroundEffect}
-                  onChange={(e) => {
-                    setBackgroundEffect(e.target.value)
-                    saveProfile({ background_effect: e.target.value })
-                  }}
-                  className="sims-card w-full border-4 border-pink-600 px-4 py-2 rounded-xl focus:outline-none bg-gradient-to-b from-white to-gray-100 font-bold uppercase text-sm"
                 >
-                  {BACKGROUND_EFFECTS.map(effect => (
-                    <option key={effect} value={effect}>{effect}</option>
-                  ))}
-                </select>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span 
+                      className="text-sm font-semibold px-2 py-1 rounded"
+                      style={{
+                        background: 'rgba(250, 240, 230, 0.9)',
+                        color: '#4b4136',
+                        fontFamily: "'Cormorant Garamond', serif",
+                      }}
+                    >
+                      Gris foncé
+                    </span>
+                  </div>
+                </button>
+
+                {/* Fond 2 : Beige clair */}
+                <button
+                  onClick={async () => {
+                    setBackgroundColor('#f5f5dc')
+                    setBackgroundType('color')
+                    setBackgroundImage(null)
+                    setBackgroundOpacity(100)
+                    await saveProfile({
+                      background_type: 'color',
+                      background_value: '#f5f5dc',
+                      background_image: null,
+                    })
+                  }}
+                  className="relative h-24 rounded-xl border-2 transition-all hover:scale-105 hover:border-amber-600"
+                  style={{
+                    backgroundColor: '#f5f5dc',
+                    borderColor: backgroundColor === '#f5f5dc' && backgroundType === 'color' ? 'rgba(184, 134, 11, 0.8)' : 'rgba(139, 115, 85, 0.3)',
+                    boxShadow: backgroundColor === '#f5f5dc' && backgroundType === 'color' ? '0 0 15px rgba(184, 134, 11, 0.5)' : 'none',
+                  }}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span 
+                      className="text-sm font-semibold px-2 py-1 rounded"
+                      style={{
+                        background: 'rgba(61, 58, 58, 0.7)',
+                        color: '#f5f5dc',
+                        fontFamily: "'Cormorant Garamond', serif",
+                      }}
+                    >
+                      Beige clair
+                    </span>
+                  </div>
+                </button>
+
+                {/* Fond 3 : Brun chaleureux */}
+                <button
+                  onClick={async () => {
+                    setBackgroundColor('#6b5b4a')
+                    setBackgroundType('color')
+                    setBackgroundImage(null)
+                    setBackgroundOpacity(100)
+                    await saveProfile({
+                      background_type: 'color',
+                      background_value: '#6b5b4a',
+                      background_image: null,
+                    })
+                  }}
+                  className="relative h-24 rounded-xl border-2 transition-all hover:scale-105 hover:border-amber-600"
+                  style={{
+                    backgroundColor: '#6b5b4a',
+                    borderColor: backgroundColor === '#6b5b4a' && backgroundType === 'color' ? 'rgba(184, 134, 11, 0.8)' : 'rgba(139, 115, 85, 0.3)',
+                    boxShadow: backgroundColor === '#6b5b4a' && backgroundType === 'color' ? '0 0 15px rgba(184, 134, 11, 0.5)' : 'none',
+                  }}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span 
+                      className="text-sm font-semibold px-2 py-1 rounded"
+                      style={{
+                        background: 'rgba(250, 240, 230, 0.9)',
+                        color: '#4b4136',
+                        fontFamily: "'Cormorant Garamond', serif",
+                      }}
+                    >
+                      Brun chaleureux
+                    </span>
+                  </div>
+                </button>
+
+                {/* Fond 4 : Vert forêt */}
+                <button
+                  onClick={async () => {
+                    setBackgroundColor('#2d4a3e')
+                    setBackgroundType('color')
+                    setBackgroundImage(null)
+                    setBackgroundOpacity(100)
+                    await saveProfile({
+                      background_type: 'color',
+                      background_value: '#2d4a3e',
+                      background_image: null,
+                    })
+                  }}
+                  className="relative h-24 rounded-xl border-2 transition-all hover:scale-105 hover:border-amber-600"
+                  style={{
+                    backgroundColor: '#2d4a3e',
+                    borderColor: backgroundColor === '#2d4a3e' && backgroundType === 'color' ? 'rgba(184, 134, 11, 0.8)' : 'rgba(139, 115, 85, 0.3)',
+                    boxShadow: backgroundColor === '#2d4a3e' && backgroundType === 'color' ? '0 0 15px rgba(184, 134, 11, 0.5)' : 'none',
+                  }}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span 
+                      className="text-sm font-semibold px-2 py-1 rounded"
+                      style={{
+                        background: 'rgba(250, 240, 230, 0.9)',
+                        color: '#4b4136',
+                        fontFamily: "'Cormorant Garamond', serif",
+                      }}
+                    >
+                      Vert forêt
+                    </span>
+                  </div>
+                </button>
               </div>
             </div>
           </div>
