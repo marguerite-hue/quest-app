@@ -21,7 +21,7 @@
    - In the function editor, look for **"Secrets"** section
    - Click **"Add secret"**
    - Name: `HUGGINGFACE_TOKEN`
-   - Value: `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`
+   - Value: `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`
    - Click **Save**
 
 5. **Deploy**

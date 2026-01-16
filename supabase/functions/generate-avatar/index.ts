@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-const HUGGINGFACE_TOKEN = Deno.env.get('HUGGINGFACE_TOKEN') || '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'
+const HUGGINGFACE_TOKEN = Deno.env.get('HUGGINGFACE_TOKEN') || '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'
 // Updated to use new router endpoint (api-inference.huggingface.co is deprecated)
 // The router endpoint uses /hf-inference prefix
 const HUGGINGFACE_URL = 'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0'

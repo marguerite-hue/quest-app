@@ -15,7 +15,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
     try {
       setLoading(true)
       
-      // First, get all user profiles (excluding current user)
+      // Get all user profiles (excluding current user)
       const { data: profiles, error: profilesError } = await supabase
         .from('user_profiles')
         .select('id, avatar_url, username, email')
@@ -46,32 +46,28 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
         return profile
       }))
       
-      // Load quests for each player to calculate stats
-      const playersWithStats = await Promise.all(profilesWithEmail.map(async (player) => {
-        // Try to get quests by email first, then by user_id if email doesn't work
-        let playerQuests = []
-        
-        if (player.email) {
-          const { data: questsByEmail } = await supabase
-            .from('quests')
-            .select('status, xp_value')
-            .eq('created_by', player.email)
-          playerQuests = questsByEmail || []
+      // OPTIMIZATION: Load ALL quests in a single query instead of one per player
+      const profileIds = profilesWithEmail.map(p => p.id).filter(Boolean)
+      const { data: allQuests } = await supabase
+        .from('quests')
+        .select('user_id, status, xp_value')
+        .in('user_id', profileIds)
+      
+      // Create a map of user_id -> quests for fast lookup
+      const questsByUser = {}
+      ;(allQuests || []).forEach(quest => {
+        if (!questsByUser[quest.user_id]) {
+          questsByUser[quest.user_id] = []
         }
+        questsByUser[quest.user_id].push(quest)
+      })
+      
+      // Calculate stats for each player (no async needed, all data is local)
+      const playersWithStats = profilesWithEmail.map(player => {
+        const playerQuests = questsByUser[player.id] || []
         
-        // Also try by user_id if available
-        if (player.id && playerQuests.length === 0) {
-          const { data: questsById } = await supabase
-            .from('quests')
-            .select('status, xp_value')
-            .eq('user_id', player.id)
-          if (questsById) {
-            playerQuests = questsById
-          }
-        }
-        
-        const completedQuests = (playerQuests || []).filter(q => q.status === 'completed')
-        const activeQuests = (playerQuests || []).filter(q => q.status !== 'completed' && q.status !== 'pending')
+        const completedQuests = playerQuests.filter(q => q.status === 'completed')
+        const activeQuests = playerQuests.filter(q => q.status === 'in_progress')
         const totalXP = completedQuests.reduce((sum, q) => sum + (q.xp_value || 0), 0)
         const level = Math.floor(totalXP / 100) + 1
         
@@ -83,8 +79,9 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
           level: level,
           username: player.username || player.email?.split('@')[0] || player.id?.substring(0, 8) || 'Aventurier'
         }
-      }))
+      })
       
+      // Sort by total XP (highest first)
       setAllPlayers(playersWithStats.sort((a, b) => b.total_xp - a.total_xp))
     } catch (error) {
       console.error('Error loading players:', error)
@@ -162,12 +159,13 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                     borderBottom: '2px solid rgba(139, 115, 85, 0.3)',
                   }}
                 ></div>
-                <p 
-                  className="text-lg md:text-xl font-medium relative z-10"
+                <p
+                  className="text-base md:text-lg font-medium relative z-10"
                   style={{
                     fontFamily: "'Cormorant Garamond', serif",
                     color: '#4b4136',
                     fontStyle: 'italic',
+                    lineHeight: '1.3',
                   }}
                 >
                   Archivus : Ah, tu consultes le grand registre du Village !<br />Parcours ces pages et trouve tes futurs compagnons de quêtes !

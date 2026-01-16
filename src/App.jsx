@@ -138,12 +138,13 @@ function LoginScreen({ onLogin }) {
                 borderBottom: '2px solid rgba(139, 115, 85, 0.3)',
               }}
             ></div>
-            <p 
-              className="text-lg md:text-xl font-medium relative z-10"
+            <p
+              className="text-base md:text-lg font-medium relative z-10"
               style={{
                 fontFamily: "'Cormorant Garamond', serif",
                 color: '#4b4136',
                 fontStyle: 'italic',
+                lineHeight: '1.3',
               }}
             >
               Archivus : {isSignUp ? <>Bienvenue aventurier !<br />Crée ton compte pour commencer l'aventure.</> : <>Bienvenue aventurier !<br />Connecte-toi avec ton mail pour continuer ton aventure.</>}

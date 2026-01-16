@@ -55,16 +55,17 @@ function VillagePlacePage({ user, onBack, onOpenRegistry, onOpenFeed }) {
                   borderBottom: '2px solid rgba(139, 115, 85, 0.3)',
                 }}
               ></div>
-              <p 
-                className="text-lg md:text-xl font-medium relative z-10"
-                style={{
-                  fontFamily: "'Cormorant Garamond', serif",
-                  color: '#4b4136',
-                  fontStyle: 'italic',
-                }}
-              >
-                Archivus : Bienvenue sur la place du village !<br />Ici, tous les aventuriers partagent leurs exploits.
-              </p>
+                <p
+                  className="text-base md:text-lg font-medium relative z-10"
+                  style={{
+                    fontFamily: "'Cormorant Garamond', serif",
+                    color: '#4b4136',
+                    fontStyle: 'italic',
+                    lineHeight: '1.3',
+                  }}
+                >
+                  Archivus : Bienvenue sur la place du village !<br />Ici, tous les aventuriers partagent leurs exploits.
+                </p>
             </div>
           </div>
           

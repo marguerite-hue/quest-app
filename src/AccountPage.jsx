@@ -78,6 +78,7 @@ const EMOJI_STICKERS = ['😀', '🎉', '🔥', '💪', '🎨', '📚', '✨', '
 
 function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry, onOpenFeed }) {
   const [profile, setProfile] = useState(null)
+  const [localQuests, setLocalQuests] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedUniverse, setSelectedUniverse] = useState(null)
   const [avatarDescription, setAvatarDescription] = useState('')
@@ -95,6 +96,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   const [textStickerSize, setTextStickerSize] = useState(24)
   const [textStickerColor, setTextStickerColor] = useState('#000000')
   const [selectedQuest, setSelectedQuest] = useState(null)
+  const [editingQuest, setEditingQuest] = useState(null)
   const [selectedQuestId, setSelectedQuestId] = useState(null)
   const [generatedAvatar, setGeneratedAvatar] = useState(null)
   const [generating, setGenerating] = useState(false)
@@ -150,7 +152,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   const [villageEchos, setVillageEchos] = useState([])
   const [questBookImageUrl, setQuestBookImageUrl] = useState(null)
   const [villageEchosOpen, setVillageEchosOpen] = useState(false)
-  const [progressionPanelOpen, setProgressionPanelOpen] = useState(false)
+  const [progressionPanelOpen, setProgressionPanelOpen] = useState(true)
   const [selectedProgressQuest, setSelectedProgressQuest] = useState(null)
   const [questCheckpoints, setQuestCheckpoints] = useState({})
   const [liveEchoNotifications, setLiveEchoNotifications] = useState([])
@@ -166,14 +168,15 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
 
   useEffect(() => {
     loadProfile()
+    loadQuests()
     loadQuestBookImage()
     loadAllPlayers()
     loadVillageEchos()
     
-    // Refresh echos every 30 seconds
+    // Refresh echos every 5 seconds (instant notifications)
     const interval = setInterval(() => {
       loadVillageEchos()
-    }, 30000)
+    }, 5000)
     
     return () => clearInterval(interval)
   }, [user])
@@ -188,15 +191,33 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       
       if (error) throw error
       
-      // Load quests for each player to calculate stats
-      const playersWithStats = await Promise.all((data || []).map(async (player) => {
-        const { data: playerQuests } = await supabase
-          .from('quests')
-          .select('status, xp_value')
-          .eq('user_id', player.id)
+      if (!data || data.length === 0) {
+        setAllPlayers([])
+        return
+      }
+      
+      // OPTIMIZATION: Load ALL quests in a single query instead of one per player
+      const playerIds = data.map(p => p.id).filter(Boolean)
+      const { data: allQuests } = await supabase
+        .from('quests')
+        .select('user_id, status, xp_value')
+        .in('user_id', playerIds)
+      
+      // Create a map of user_id -> quests for fast lookup
+      const questsByUser = {}
+      ;(allQuests || []).forEach(quest => {
+        if (!questsByUser[quest.user_id]) {
+          questsByUser[quest.user_id] = []
+        }
+        questsByUser[quest.user_id].push(quest)
+      })
+      
+      // Calculate stats for each player (no async needed, all data is local)
+      const playersWithStats = data.map(player => {
+        const playerQuests = questsByUser[player.id] || []
         
-        const completedQuests = (playerQuests || []).filter(q => q.status === 'completed')
-        const activeQuests = (playerQuests || []).filter(q => q.status !== 'completed')
+        const completedQuests = playerQuests.filter(q => q.status === 'completed')
+        const activeQuests = playerQuests.filter(q => q.status === 'in_progress')
         const totalXP = completedQuests.reduce((sum, q) => sum + (q.xp_value || 0), 0)
         const level = Math.floor(totalXP / 100) + 1
         
@@ -207,7 +228,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           total_xp: totalXP,
           level: level
         }
-      }))
+      })
       
       setAllPlayers(playersWithStats)
     } catch (error) {
@@ -223,23 +244,35 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const { data: recentCompletedQuests, error: questsError } = await supabase
         .from('quests')
-        .select('id, title, created_by, created_at')
+        .select('id, title, user_id, created_by, created_at')
         .eq('status', 'completed')
         .gte('created_at', oneDayAgo)
-        .neq('created_by', user?.email)
+        // Removed .neq('user_id', user?.id) to include own quests
         .order('created_at', { ascending: false })
-        .limit(5)
+        .limit(10)
       
       if (questsError) throw questsError
       
       // Récupérer les profils des utilisateurs pour les quêtes
       for (const quest of recentCompletedQuests || []) {
-        // Essayer de trouver le profil via l'email dans created_by
-        const { data: userProfile } = await supabase
-          .from('user_profiles')
-          .select('username, email')
-          .eq('email', quest.created_by)
-          .maybeSingle()
+        // Essayer de trouver le profil via user_id d'abord, sinon via email
+        let userProfile = null
+        
+        if (quest.user_id) {
+          const { data } = await supabase
+            .from('user_profiles')
+            .select('username, email')
+            .eq('id', quest.user_id)
+            .maybeSingle()
+          userProfile = data
+        } else if (quest.created_by) {
+          const { data } = await supabase
+            .from('user_profiles')
+            .select('username, email')
+            .eq('email', quest.created_by)
+            .maybeSingle()
+          userProfile = data
+        }
         
         const username = userProfile?.username || quest.created_by?.split('@')[0] || 'Un aventurier'
         const timeDiff = Date.now() - new Date(quest.created_at).getTime()
@@ -249,18 +282,65 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           id: `quest-${quest.id}`,
           message: `🏆 ${username} a complété la quête "${quest.title}" !`,
           time: timeAgo,
-          type: 'achievement'
+          type: 'achievement',
+          timestamp: new Date(quest.created_at).getTime()
         })
       }
       
-      // 2. Récupérer les nouveaux joueurs (dernières 24h)
+      // 2. Récupérer les nouvelles quêtes créées (dernières 24h, tous statuts)
+      const { data: newQuests, error: newQuestsError } = await supabase
+        .from('quests')
+        .select('id, title, user_id, created_by, created_at, status')
+        .gte('created_at', oneDayAgo)
+        // Removed .neq('user_id', user?.id) to include own quests
+        .order('created_at', { ascending: false })
+        .limit(10)
+      
+      if (newQuestsError) throw newQuestsError
+      
+      // Récupérer les profils des utilisateurs pour les nouvelles quêtes
+      for (const quest of newQuests || []) {
+        // Essayer de trouver le profil via user_id d'abord, sinon via email
+        let userProfile = null
+        
+        if (quest.user_id) {
+          const { data } = await supabase
+            .from('user_profiles')
+            .select('username, email')
+            .eq('id', quest.user_id)
+            .maybeSingle()
+          userProfile = data
+        } else if (quest.created_by) {
+          const { data } = await supabase
+            .from('user_profiles')
+            .select('username, email')
+            .eq('email', quest.created_by)
+            .maybeSingle()
+          userProfile = data
+        }
+        
+        const username = userProfile?.username || quest.created_by?.split('@')[0] || 'Un aventurier'
+        const timeDiff = Date.now() - new Date(quest.created_at).getTime()
+        const timeAgo = formatTimeAgo(timeDiff)
+        
+        echos.push({
+          id: `new-quest-${quest.id}`,
+          message: `📜 ${username} a créé la quête "${quest.title}" !`,
+          time: timeAgo,
+          type: 'quest',
+          timestamp: new Date(quest.created_at).getTime()
+        })
+      }
+      
+      // 3. Récupérer les nouveaux joueurs (dernières 24h)
       const { data: newPlayers, error: playersError } = await supabase
         .from('user_profiles')
         .select('id, username, email, created_at')
         .gte('created_at', oneDayAgo)
+        // Keep .neq for players (don't show "you joined the village")
         .neq('id', user?.id)
         .order('created_at', { ascending: false })
-        .limit(3)
+        .limit(5)
       
       if (playersError) throw playersError
       
@@ -273,12 +353,15 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           id: `player-${player.id}`,
           message: `✨ ${username} a rejoint le village !`,
           time: timeAgo,
-          type: 'info'
+          type: 'info',
+          timestamp: new Date(player.created_at).getTime()
         })
       }
       
-      // Les échos sont déjà triés par ordre chronologique décroissant lors des requêtes
-      const recentEchos = echos.slice(0, 10) // Garder seulement les 10 plus récents
+      // Trier tous les échos par date (plus récents en premier)
+      echos.sort((a, b) => b.timestamp - a.timestamp)
+      
+      const recentEchos = echos.slice(0, 5) // Garder seulement les 5 plus récents
       setVillageEchos(recentEchos)
       
       // Detect new echos and show as live notifications
@@ -438,8 +521,11 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
     }
   }, [profile])
 
+  // Use localQuests if available, otherwise fallback to prop quests
+  const effectiveQuests = localQuests.length > 0 ? localQuests : quests
+
   // Get active recurring quests (not completed, with timeline)
-  const recurringQuests = quests.filter(q => 
+  const recurringQuests = effectiveQuests.filter(q => 
     q.status !== 'completed' && 
     (q.timeline === 'this week' || q.timeline === 'this month' || q.timeline === 'this year')
   )
@@ -464,6 +550,25 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
     }
   }, [profile, backgroundColor, backgroundOpacity, backgroundEffect, backgroundImage])
 
+  const loadQuests = async () => {
+    if (!user?.id) return
+
+    try {
+      const { data, error } = await supabase
+        .from('quests')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      setLocalQuests(data || [])
+    } catch (error) {
+      console.error('Error loading quests:', error)
+      setLocalQuests([])
+    }
+  }
+
   const loadProfile = async () => {
     if (!user?.id) return
 
@@ -482,7 +587,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         setSelectedUniverse(data.avatar_universe)
         setAvatarDescription(data.avatar_description || '')
         setBackgroundType(data.background_type || 'color')
-        setBackgroundColor(data.background_value || '#87CEEB')
+        setBackgroundColor(data.background_value || '#3d3a3a')
         setBackgroundEffect(data.background_effect || 'none')
         setStickers(data.stickers || [])
         if (data.quest_positions) {
@@ -678,7 +783,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       console.log('Generating avatar with prompt:', prompt)
       
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://uxgejvkoevtexfquafgg.supabase.co'
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4Z2VqdmtvZXZ0ZXhmcXVhZmdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5NjE5NjIsImV4cCI6MjA4MzUzNzk2Mn0.kt9snmmPJHEzf-dSJkFr40v2qu3CcjXl9kmo7ORqXPE'
       
       const response = await fetch(
         `${supabaseUrl}/functions/v1/generate-avatar`,
@@ -1091,6 +1196,13 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       return
     }
 
+    // Check if user is logged in
+    if (!user?.id) {
+      setErrorMessage('Vous devez être connecté pour créer une quête')
+      setTimeout(() => setErrorMessage(''), 3000)
+      return
+    }
+
     try {
       const { data, error } = await supabase
         .from('quests')
@@ -1101,13 +1213,20 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           xp_value: newQuest.xp_value,
           timeline: newQuest.timeline,
           status: 'pending',
-          created_by: user?.email || 'unknown',
+          user_id: user.id,
+          created_by: user?.email || 'unknown', // Keep for backward compatibility
         }])
         .select()
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase error:', error)
+        throw error
+      }
 
-      setShowCreateQuestModal(false)
+      // Get the created quest data
+      const createdQuest = data?.[0]
+      
+      // Reset form
       setNewQuest({
         title: '',
         description: '',
@@ -1115,15 +1234,49 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         xp_value: 70,
         timeline: 'this week',
       })
+      
+      // Close modal
+      setShowCreateQuestModal(false)
+      
+      // Reload data locally (no page refresh)
+      await loadQuests()
+      await loadProfile()
+      await loadAllPlayers()
+      
+      // Trigger immediate echo notification refresh
+      await loadVillageEchos()
+      
+      // Show live notification for the created quest
+      if (createdQuest) {
+        const username = profile?.username || user?.email?.split('@')[0] || 'Toi'
+        showLiveNotification({
+          id: `your-quest-${createdQuest.id}`,
+          message: `📜 ${username} a créé la quête "${createdQuest.title}" !`,
+          time: "À l'instant",
+          type: 'quest'
+        })
+      }
+      
+      // Show success message
       setSuccessMessage('Quête créée avec succès ! ✨')
       setTimeout(() => setSuccessMessage(''), 3000)
-      
-      // Reload page to refresh quests
-      window.location.reload()
     } catch (error) {
       console.error('Error creating quest:', error)
-      setErrorMessage('Erreur lors de la création de la quête')
-      setTimeout(() => setErrorMessage(''), 3000)
+      
+      // More detailed error messages
+      if (error.code === 'PGRST301') {
+        setErrorMessage('Erreur de permission. Vérifiez vos droits d\'accès.')
+      } else if (error.message?.includes('auth')) {
+        setErrorMessage('Session expirée. Veuillez vous reconnecter.')
+        // Optionally redirect to login
+        setTimeout(() => {
+          supabase.auth.signOut()
+        }, 2000)
+      } else {
+        setErrorMessage('Erreur lors de la création de la quête. Réessayez.')
+      }
+      
+      setTimeout(() => setErrorMessage(''), 5000)
     }
   }
 
@@ -1336,9 +1489,9 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   }
 
   // Calculate stats
-  const totalXP = quests.filter(q => q.status === 'completed').reduce((sum, q) => sum + q.xp_value, 0)
-  const activeQuests = quests.filter(q => q.status !== 'completed' && !hiddenQuests.includes(q.id))
-  const completedQuests = quests.filter(q => q.status === 'completed')
+  const totalXP = effectiveQuests.filter(q => q.status === 'completed').reduce((sum, q) => sum + q.xp_value, 0)
+  const activeQuests = effectiveQuests.filter(q => q.status !== 'completed' && !hiddenQuests.includes(q.id))
+  const completedQuests = effectiveQuests.filter(q => q.status === 'completed')
   // Calculate level (100 XP per level, starting at level 1)
   const currentLevel = Math.floor(totalXP / 100) + 1
 
@@ -1354,7 +1507,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   
   // Calculate category progress
   const getCategoryProgress = (category) => {
-    const categoryQuests = quests.filter(q => q.category === category)
+    const categoryQuests = effectiveQuests.filter(q => q.category === category)
     const completed = categoryQuests.filter(q => q.status === 'completed').length
     const total = categoryQuests.length
     const xp = categoryQuests.filter(q => q.status === 'completed').reduce((sum, q) => sum + q.xp_value, 0)
@@ -1396,18 +1549,31 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       {/* Top Navigation - Y2K Style */}
         <div className="sticky top-0 z-50 glass-card border-b border-white/30" style={{ paddingTop: '0px', paddingBottom: '0px' }}>
           <div className="flex items-center justify-between gap-4" style={{ paddingLeft: '65px', paddingRight: '65px' }}>
-          <button
-            onClick={onGoToVillagePlace || onBack}
-            className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
-            style={{
-              fontFamily: "'Cinzel Decorative', serif",
-            }}
-          >
-            ← Vers la place du village 🎪
-          </button>
+          {/* Left Navigation Buttons */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onGoToVillagePlace || onBack}
+              className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
+              style={{
+                fontFamily: "'Cinzel Decorative', serif",
+              }}
+            >
+              ← Vers la place du village 🎪
+            </button>
+
+            <button
+              onClick={onOpenFeed}
+              className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
+              style={{
+                fontFamily: "'Cinzel Decorative', serif",
+              }}
+            >
+              ← Vers le fil d'actualité 📜
+            </button>
+          </div>
           
           {/* Archivus Character */}
-          <div className="flex items-center gap-0 relative z-40" style={{ marginLeft: '-576px' }}>
+          <div className="flex items-center gap-0 relative z-40" style={{ marginLeft: '-900px' }}>
             <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '130px' }}>
               <img
                 src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
@@ -1442,12 +1608,13 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                   borderBottom: '2px solid rgba(139, 115, 85, 0.3)',
                 }}
               ></div>
-              <p 
-                className="text-lg md:text-xl font-medium relative z-10"
+              <p
+                className="text-base md:text-lg font-medium relative z-10"
                 style={{
                   fontFamily: "'Cormorant Garamond', serif",
                   color: '#4b4136',
                   fontStyle: 'italic',
+                  lineHeight: '1.3',
                 }}
               >
                 Archivus : Te revoilà, aventurier !<br />Tu es ici chez toi {getUserDisplayName()}
@@ -2032,7 +2199,15 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           </button>
 
           {tentMenuOpen && (
-            <div className="absolute right-full mr-4 top-1/2 transform -translate-y-1/2 z-50 space-y-3">
+            <div 
+              className="absolute right-full mr-4 top-1/2 transform -translate-y-1/2 z-50 space-y-3"
+              onMouseEnter={() => {
+                if (tentMenuTimeoutRef.current) {
+                  clearTimeout(tentMenuTimeoutRef.current)
+                  tentMenuTimeoutRef.current = null
+                }
+              }}
+            >
               {/* Choisis un fond */}
               <div className="relative group">
                 <button
@@ -2198,7 +2373,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           </div>
           <div className="flex items-center gap-2" style={{ color: '#4b4136' }}>
             <span className="text-xl">🏆</span>
-            <span className="font-semibold">{completedQuests.length}/{quests.length} quêtes terminées</span>
+            <span className="font-semibold">{completedQuests.length}/{effectiveQuests.length} quêtes terminées</span>
           </div>
           <div className="flex items-center gap-2" style={{ color: '#4b4136' }}>
             <span className="text-xl">📋</span>
@@ -3882,24 +4057,302 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         </div>
       )}
 
-      {/* Quest Detail Modal */}
+      {/* Quest Detail Modal with Edit/Delete */}
       {selectedQuest && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedQuest(null)}>
-          <div className="bg-white border-4 border-yellow-600 rounded-xl p-6 max-w-md mx-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-2xl font-bold mb-2">{selectedQuest.title}</h3>
-            <p className="mb-4">{selectedQuest.description}</p>
-            <div className="flex gap-2">
-              <span className={`px-3 py-1 rounded ${getStatusColor(selectedQuest.status)}`}>
-                {selectedQuest.status}
-              </span>
-              <span className="px-3 py-1 rounded bg-yellow-300">{selectedQuest.xp_value} XP</span>
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedQuest(null)}>
+          <div 
+            className="rounded-3xl p-6 md:p-8 max-w-md w-full soft-shadow" 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
+              border: '2px solid rgba(139, 115, 85, 0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+            }}
+          >
+            <div className="flex justify-between items-start mb-4">
+              <h3 
+                className="text-2xl font-bold"
+                style={{
+                  fontFamily: "'Cinzel Decorative', serif",
+                  color: '#4b4136',
+                }}
+              >
+                {selectedQuest.title}
+              </h3>
+              <button 
+                onClick={() => setSelectedQuest(null)} 
+                className="text-3xl font-semibold hover:scale-110 transition-transform"
+                style={{ color: '#4b4136' }}
+              >
+                ×
+              </button>
             </div>
-            <button
-              onClick={() => setSelectedQuest(null)}
-              className="mt-4 w-full bg-yellow-400 hover:bg-yellow-500 border-4 border-yellow-600 text-yellow-900 font-bold py-2 rounded-xl"
+            
+            <p 
+              className="mb-4"
+              style={{
+                fontFamily: "'Cormorant Garamond', serif",
+                color: '#4b4136',
+                fontSize: '1rem',
+              }}
             >
-              Close
-            </button>
+              {selectedQuest.description}
+            </p>
+            
+            <div className="flex gap-2 mb-4 flex-wrap">
+              <span 
+                className="px-3 py-1 rounded-2xl text-sm font-semibold"
+                style={{
+                  background: selectedQuest.status === 'completed' ? 'rgba(34, 197, 94, 0.2)' : 
+                             selectedQuest.status === 'in_progress' ? 'rgba(59, 130, 246, 0.2)' : 
+                             'rgba(251, 191, 36, 0.2)',
+                  border: selectedQuest.status === 'completed' ? '1px solid rgba(34, 197, 94, 0.4)' : 
+                         selectedQuest.status === 'in_progress' ? '1px solid rgba(59, 130, 246, 0.4)' : 
+                         '1px solid rgba(251, 191, 36, 0.4)',
+                  color: selectedQuest.status === 'completed' ? '#15803d' : 
+                        selectedQuest.status === 'in_progress' ? '#1e40af' : 
+                        '#d97706'
+                }}
+              >
+                {selectedQuest.status === 'completed' ? '✅ Complétée' : 
+                 selectedQuest.status === 'in_progress' ? '🔄 En cours' : 
+                 '📝 En attente'}
+              </span>
+              <span 
+                className="px-3 py-1 rounded-2xl text-sm font-semibold"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.4)',
+                  border: '1px solid rgba(139, 115, 85, 0.2)',
+                  color: '#4b4136',
+                }}
+              >
+                +{selectedQuest.xp_value} XP
+              </span>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setEditingQuest(selectedQuest)
+                  setSelectedQuest(null)
+                }}
+                className="flex-1 px-4 py-2 rounded-2xl font-semibold text-base transition-all hover:scale-105 active:scale-95"
+                style={{
+                  background: 'linear-gradient(to bottom, rgba(139, 115, 85, 0.9), rgba(101, 84, 62, 0.9))',
+                  border: '2px solid rgba(184, 134, 11, 0.6)',
+                  color: '#fef3c7',
+                  fontFamily: "'Cinzel Decorative', serif",
+                  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+                }}
+              >
+                ✏️ Modifier
+              </button>
+              <button
+                onClick={async () => {
+                  if (window.confirm(`Êtes-vous sûr de vouloir supprimer la quête "${selectedQuest.title}" ?`)) {
+                    try {
+                      const { error } = await supabase
+                        .from('quests')
+                        .delete()
+                        .eq('id', selectedQuest.id)
+                        .eq('user_id', user.id)
+                      
+                      if (error) throw error
+                      
+                      setSelectedQuest(null)
+                      await loadQuests()
+                      await loadProfile()
+                      setSuccessMessage('Quête supprimée avec succès ! ✨')
+                      setTimeout(() => setSuccessMessage(''), 3000)
+                    } catch (error) {
+                      console.error('Error deleting quest:', error)
+                      setErrorMessage('Erreur lors de la suppression. Réessaie !')
+                      setTimeout(() => setErrorMessage(''), 3000)
+                    }
+                  }
+                }}
+                className="flex-1 px-4 py-2 rounded-2xl font-semibold text-base transition-all hover:scale-105 active:scale-95"
+                style={{
+                  background: 'linear-gradient(to bottom, rgba(220, 38, 38, 0.9), rgba(185, 28, 28, 0.9))',
+                  border: '2px solid rgba(220, 38, 38, 0.6)',
+                  color: '#fef3c7',
+                  fontFamily: "'Cinzel Decorative', serif",
+                  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+                }}
+              >
+                🗑️ Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Quest Modal */}
+      {editingQuest && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setEditingQuest(null)}>
+          <div 
+            className="rounded-3xl p-6 md:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto soft-shadow" 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
+              border: '2px solid rgba(139, 115, 85, 0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+            }}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h2 
+                className="text-3xl font-bold flex items-center gap-2"
+                style={{
+                  fontFamily: "'Cinzel Decorative', serif",
+                  color: '#4b4136',
+                }}
+              >
+                <span className="text-2xl">✏️</span>
+                <span>Modifier la Quête</span>
+              </h2>
+              <button 
+                onClick={() => setEditingQuest(null)} 
+                className="text-3xl font-semibold hover:scale-110 transition-transform"
+                style={{ color: '#4b4136' }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Title */}
+              <div>
+                <label 
+                  className="block text-sm font-semibold mb-2"
+                  style={{
+                    fontFamily: "'Cinzel Decorative', serif",
+                    color: '#4b4136',
+                  }}
+                >
+                  Titre de la quête
+                </label>
+                <input
+                  type="text"
+                  value={editingQuest.title}
+                  onChange={(e) => setEditingQuest({...editingQuest, title: e.target.value})}
+                  className="w-full px-4 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.8)',
+                    border: '1px solid rgba(139, 115, 85, 0.3)',
+                    fontFamily: "'Cormorant Garamond', serif",
+                    color: '#4b4136',
+                  }}
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label 
+                  className="block text-sm font-semibold mb-2"
+                  style={{
+                    fontFamily: "'Cinzel Decorative', serif",
+                    color: '#4b4136',
+                  }}
+                >
+                  Description
+                </label>
+                <textarea
+                  value={editingQuest.description}
+                  onChange={(e) => setEditingQuest({...editingQuest, description: e.target.value})}
+                  rows={4}
+                  className="w-full px-4 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.8)',
+                    border: '1px solid rgba(139, 115, 85, 0.3)',
+                    fontFamily: "'Cormorant Garamond', serif",
+                    color: '#4b4136',
+                  }}
+                />
+              </div>
+
+              {/* Status */}
+              <div>
+                <label 
+                  className="block text-sm font-semibold mb-2"
+                  style={{
+                    fontFamily: "'Cinzel Decorative', serif",
+                    color: '#4b4136',
+                  }}
+                >
+                  Statut
+                </label>
+                <select
+                  value={editingQuest.status}
+                  onChange={(e) => setEditingQuest({...editingQuest, status: e.target.value})}
+                  className="w-full px-4 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.8)',
+                    border: '1px solid rgba(139, 115, 85, 0.3)',
+                    fontFamily: "'Cormorant Garamond', serif",
+                    color: '#4b4136',
+                  }}
+                >
+                  <option value="pending">📝 En attente</option>
+                  <option value="in_progress">🔄 En cours</option>
+                  <option value="completed">✅ Complétée</option>
+                </select>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setEditingQuest(null)}
+                  className="flex-1 px-4 py-3 rounded-3xl font-semibold transition-all hover:scale-105 active:scale-95"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.8)',
+                    border: '2px solid rgba(139, 115, 85, 0.3)',
+                    color: '#4b4136',
+                    fontFamily: "'Cinzel Decorative', serif",
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const { error } = await supabase
+                        .from('quests')
+                        .update({
+                          title: editingQuest.title,
+                          description: editingQuest.description,
+                          status: editingQuest.status,
+                          updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', editingQuest.id)
+                        .eq('user_id', user.id)
+                      
+                      if (error) throw error
+                      
+                      setEditingQuest(null)
+                      await loadQuests()
+                      await loadProfile()
+                      await loadVillageEchos()
+                      setSuccessMessage('Quête modifiée avec succès ! ✨')
+                      setTimeout(() => setSuccessMessage(''), 3000)
+                    } catch (error) {
+                      console.error('Error updating quest:', error)
+                      setErrorMessage('Erreur lors de la modification. Réessaie !')
+                      setTimeout(() => setErrorMessage(''), 3000)
+                    }
+                  }}
+                  className="flex-1 px-4 py-3 rounded-3xl font-semibold transition-all hover:scale-105 active:scale-95"
+                  style={{
+                    fontFamily: "'Cinzel Decorative', serif",
+                    background: 'linear-gradient(to bottom, rgba(139, 115, 85, 0.9), rgba(101, 84, 62, 0.9))',
+                    border: '2px solid rgba(184, 134, 11, 0.6)',
+                    color: '#fef3c7',
+                    boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+                  }}
+                >
+                  Enregistrer ✨
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
