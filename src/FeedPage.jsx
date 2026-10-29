@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 import './AccountPage.css'
 import './LoadingScreen.css'
+import LoadingParchment from './LoadingParchment'
 
 function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenRegistry }) {
   const [feedPosts, setFeedPosts] = useState([])
@@ -756,57 +757,10 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
           {/* Feed Posts */}
           {loading ? (
             <div className="flex justify-center items-center py-24">
-              <div className="text-center">
-                <div className="inline-block">
-                  <div className="archivus-loading mb-6">
-                    <img
-                      src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
-                      alt="Archivus"
-                      className="object-cover mx-auto"
-                      style={{
-                        width: '106px',
-                        height: '106px',
-                        filter: 'drop-shadow(0 10px 30px rgba(0, 0, 0, 0.3))',
-                      }}
-                      onError={(e) => {
-                        e.target.style.display = 'none'
-                      }}
-                    />
-                  </div>
-                  <p 
-                    className="text-xl font-semibold mb-4"
-                    style={{
-                      fontFamily: "'Cinzel Decorative', serif",
-                      color: '#4b4136',
-                    }}
-                  >
-                    Chargement du feed...
-                  </p>
-                  <div className="loading-dots">
-                    <span className="dot"></span>
-                    <span className="dot"></span>
-                    <span className="dot"></span>
-                  </div>
-                </div>
-              </div>
+              <LoadingParchment message="Chargement du feed..." />
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div className="mb-1 text-center">
-                <h2
-                  className="inline-block text-3xl font-bold mb-0 px-6 py-2 rounded-2xl"
-                  style={{
-                    fontFamily: "'Cinzel Decorative', serif",
-                    color: '#4b4136',
-                    background: 'linear-gradient(to bottom, rgba(250, 240, 230, 1), rgba(245, 235, 220, 1))',
-                    border: '2px solid rgba(139, 115, 85, 0.3)',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                  }}
-                >
-                  📜 Fil d'actualités
-                </h2>
-              </div>
-
               {/* Filter Buttons */}
               <div className="flex justify-center gap-3 mb-2">
                 <button

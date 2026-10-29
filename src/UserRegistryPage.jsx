@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 import './AccountPage.css'
 import './LoadingScreen.css'
+import LoadingParchment from './LoadingParchment'
 
 function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
   const [allPlayers, setAllPlayers] = useState([])
@@ -253,52 +254,10 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
         <div className="max-w-7xl mx-auto px-4 pt-8 pb-24 relative" style={{ zIndex: 1 }}>
           {loading ? (
             <div className="flex justify-center items-center py-24">
-              <div className="text-center">
-                <div className="inline-block">
-                  <div className="archivus-loading mb-6">
-                    <img
-                      src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
-                      alt="Archivus"
-                      className="object-cover mx-auto"
-                      style={{
-                        width: '106px',
-                        height: '106px',
-                        filter: 'drop-shadow(0 10px 30px rgba(0, 0, 0, 0.3))',
-                      }}
-                      onError={(e) => {
-                        e.target.style.display = 'none'
-                      }}
-                    />
-                  </div>
-                  <p 
-                    className="text-xl font-semibold mb-4"
-                    style={{
-                      fontFamily: "'Cinzel Decorative', serif",
-                      color: '#4b4136',
-                    }}
-                  >
-                    Chargement du registre...
-                  </p>
-                  <div className="loading-dots">
-                    <span className="dot"></span>
-                    <span className="dot"></span>
-                    <span className="dot"></span>
-                  </div>
-                </div>
-              </div>
+              <LoadingParchment message="Chargement du registre..." />
             </div>
           ) : (
             <div className="space-y-4">
-              <h2 
-                className="text-3xl font-bold mb-6 text-center"
-                style={{
-                  fontFamily: "'Cinzel Decorative', serif",
-                  color: '#4b4136',
-                }}
-              >
-                📜 Grand Registre du Village
-              </h2>
-              
               {allPlayers.length === 0 ? (
                 <div className="text-center py-12">
                   <p 
