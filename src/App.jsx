@@ -114,7 +114,7 @@ function LoginScreen({ onLogin }) {
       <div className="absolute inset-0 bg-black/20 z-0"></div>
       
       <div 
-        className="rounded-3xl p-6 max-w-3xl w-full soft-shadow relative z-10"
+        className="rounded-3xl p-6 max-w-2xl w-full soft-shadow relative z-10"
         style={{
           background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
           border: '2px solid rgba(139, 115, 85, 0.3)',
@@ -136,14 +136,14 @@ function LoginScreen({ onLogin }) {
 
         {/* Archivus Character avec bulle de dialogue */}
         <div className="flex items-center gap-0 relative z-40 mb-4 justify-center">
-          <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: 'clamp(110px, 19vh, 220px)' }}>
+          <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: 'clamp(110px, 19vh, 200px)' }}>
             <img
               src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
               alt="Archivus"
               className="object-cover"
               style={{
-                width: 'clamp(110px, 19vh, 220px)',
-                height: 'clamp(110px, 19vh, 220px)',
+                width: 'clamp(110px, 19vh, 200px)',
+                height: 'clamp(110px, 19vh, 200px)',
                 objectPosition: 'center top',
               }}
               onError={(e) => {
@@ -173,7 +173,7 @@ function LoginScreen({ onLogin }) {
             <p
               className="font-medium relative z-10"
               style={{
-                fontSize: '1.2rem',
+                fontSize: '1.05rem',
                 fontFamily: "'Cormorant Garamond', serif",
                 color: '#4b4136',
                 fontStyle: 'italic',
