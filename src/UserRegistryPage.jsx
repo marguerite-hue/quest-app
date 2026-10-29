@@ -128,8 +128,10 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
         }
       })
       
-      // Sort by total XP (highest first)
-      setAllPlayers(playersWithStats.sort((a, b) => b.total_xp - a.total_xp))
+      // Current user first, then by total XP (highest first)
+      setAllPlayers(playersWithStats.sort((a, b) =>
+        (b.id === user?.id) - (a.id === user?.id) || b.total_xp - a.total_xp
+      ))
     } catch (error) {
       console.error('Error loading players:', error)
       setAllPlayers([])
@@ -270,21 +272,21 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {allPlayers.map((player) => {
                     const isMe = player.id === user?.id
                     return (
                     <div
                       key={player.id}
-                      className="glass-card rounded-3xl p-6 soft-shadow fade-in"
+                      className="glass-card rounded-3xl p-4 soft-shadow fade-in"
                       style={{
                         background: 'linear-gradient(to bottom, rgba(250, 240, 230, 1), rgba(245, 235, 220, 1))',
                         border: isMe ? '2px solid rgba(184, 134, 11, 0.6)' : '2px solid rgba(139, 115, 85, 0.3)',
                         boxShadow: 'inset 0 0 20px rgba(139, 115, 85, 0.1), 0 8px 32px rgba(0,0,0,0.1)',
                       }}
                     >
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-300 to-pink-300 flex items-center justify-center text-2xl flex-shrink-0">
+                      <div className="flex flex-wrap items-center gap-3 mb-3">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-300 to-pink-300 flex items-center justify-center text-xl flex-shrink-0">
                           {player.avatar_url ? (
                             <img 
                               src={player.avatar_url} 
@@ -297,7 +299,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p 
-                            className="text-xl font-bold truncate"
+                            className="text-base font-bold truncate"
                             style={{
                               fontFamily: "'Cinzel Decorative', serif",
                               color: '#4b4136',
@@ -306,7 +308,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                             {player.username}{isMe && ' (moi)'}
                           </p>
                           <p 
-                            className="text-sm opacity-70 truncate"
+                            className="text-xs opacity-70 truncate"
                             style={{
                               fontFamily: "'Cormorant Garamond', serif",
                               color: '#4b4136',
@@ -321,7 +323,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                             e.stopPropagation()
                             handleFollowUser(player.id)
                           }}
-                          className="px-4 py-2 rounded-2xl font-semibold text-sm transition-all flex-shrink-0"
+                          className="w-full px-3 py-1.5 rounded-2xl font-semibold text-xs transition-all"
                           style={{
                             fontFamily: "'Cinzel Decorative', serif",
                             background: followingIds.includes(player.id)
@@ -337,16 +339,16 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                         )}
                       </div>
                       
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <div 
-                          className="flex justify-between items-center px-3 py-2 rounded-2xl"
+                          className="flex justify-between items-center gap-2 px-2 py-1.5 rounded-2xl"
                           style={{
                             background: 'rgba(255, 255, 255, 0.5)',
                             border: '1px solid rgba(139, 115, 85, 0.2)',
                           }}
                         >
                           <span 
-                            className="text-sm font-semibold"
+                            className="text-xs font-semibold"
                             style={{
                               fontFamily: "'Cormorant Garamond', serif",
                               color: '#4b4136',
@@ -355,7 +357,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                             XP Total
                           </span>
                           <span 
-                            className="text-sm font-bold"
+                            className="text-xs font-bold"
                             style={{
                               fontFamily: "'Cinzel Decorative', serif",
                               color: '#4b4136',
@@ -366,14 +368,14 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                         </div>
                         
                         <div 
-                          className="flex justify-between items-center px-3 py-2 rounded-2xl"
+                          className="flex justify-between items-center gap-2 px-2 py-1.5 rounded-2xl"
                           style={{
                             background: 'rgba(255, 255, 255, 0.5)',
                             border: '1px solid rgba(139, 115, 85, 0.2)',
                           }}
                         >
                           <span 
-                            className="text-sm font-semibold"
+                            className="text-xs font-semibold"
                             style={{
                               fontFamily: "'Cormorant Garamond', serif",
                               color: '#4b4136',
@@ -382,7 +384,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                             Quêtes complétées
                           </span>
                           <span 
-                            className="text-sm font-bold"
+                            className="text-xs font-bold"
                             style={{
                               fontFamily: "'Cinzel Decorative', serif",
                               color: '#4b4136',
@@ -393,14 +395,14 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                         </div>
                         
                         <div 
-                          className="flex justify-between items-center px-3 py-2 rounded-2xl"
+                          className="flex justify-between items-center gap-2 px-2 py-1.5 rounded-2xl"
                           style={{
                             background: 'rgba(255, 255, 255, 0.5)',
                             border: '1px solid rgba(139, 115, 85, 0.2)',
                           }}
                         >
                           <span 
-                            className="text-sm font-semibold"
+                            className="text-xs font-semibold"
                             style={{
                               fontFamily: "'Cormorant Garamond', serif",
                               color: '#4b4136',
@@ -409,7 +411,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                             Quêtes actives
                           </span>
                           <span 
-                            className="text-sm font-bold"
+                            className="text-xs font-bold"
                             style={{
                               fontFamily: "'Cinzel Decorative', serif",
                               color: '#4b4136',
