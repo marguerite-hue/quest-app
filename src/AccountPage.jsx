@@ -2529,11 +2529,10 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                   Des aventuriers avec qui tu devrais t'entendre
                 </h2>
                 <p 
-                  className="text-sm italic mt-1"
+                  className="text-xl italic font-medium mt-1"
                   style={{
                     fontFamily: "'Cormorant Garamond', serif",
                     color: '#4b4136',
-                    opacity: 0.7,
                   }}
                 >
                   Tous les aventuriers du village sont dans le Grand Registre
