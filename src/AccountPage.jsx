@@ -1900,7 +1900,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
             progressionPanelOpen ? 'p-4' : 'p-3'
           }`}
           style={{
-            background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.9), rgba(245, 235, 220, 0.9))',
+            background: 'linear-gradient(to bottom, rgba(250, 240, 230, 1), rgba(245, 235, 220, 1))',
             border: '2px solid rgba(139, 115, 85, 0.3)',
             boxShadow: 'inset 0 0 20px rgba(139, 115, 85, 0.1), 0 8px 32px rgba(0,0,0,0.1)',
             maxHeight: progressionPanelOpen ? '400px' : 'auto',
@@ -2211,7 +2211,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         <div 
           className="rounded-3xl px-4 py-3 soft-shadow"
           style={{
-            background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.9), rgba(245, 235, 220, 0.9))',
+            background: 'linear-gradient(to bottom, rgba(250, 240, 230, 1), rgba(245, 235, 220, 1))',
             border: '2px solid rgba(139, 115, 85, 0.3)',
             boxShadow: 'inset 0 0 20px rgba(139, 115, 85, 0.1), 0 8px 32px rgba(0,0,0,0.1)',
             width: '255px',
