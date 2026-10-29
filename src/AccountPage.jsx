@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase, HUGGINGFACE_TOKEN } from './supabase'
+import { supabase } from './supabase'
 import { getCarnetQuetesUrl } from '@/assets'
 import { assetManager } from '@/utils/assetManager'
 import LoadingScreen from './LoadingScreen'
@@ -921,7 +921,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error('Edge Function not deployed. Please deploy it via Supabase Dashboard. See DEPLOY_FUNCTION_NOW.md for instructions.')
+          throw new Error('Edge Function not deployed. Please deploy it via Supabase Dashboard. See supabase/functions/generate-avatar/README.md for instructions.')
         }
         
         const contentType = response.headers.get('content-type')
@@ -1015,7 +1015,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
 
       if (uploadError) {
         if (uploadError.message.includes('Bucket not found') || uploadError.message.includes('does not exist') || uploadError.code === '404') {
-          throw new Error('Storage bucket "avatars" not found. Please run the SQL in CREATE_AVATARS_BUCKET.sql file in your Supabase SQL Editor to create it.')
+          throw new Error('Storage bucket "avatars" not found. Please run the SQL in supabase/migrations/20260111131803_create_avatars_bucket.sql in your Supabase SQL Editor to create it.')
         }
         console.error('Upload error:', uploadError)
         throw uploadError
@@ -1042,7 +1042,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       let errorMsg = 'Couldn\'t save avatar. '
       
       if (error.message?.includes('table') && error.message?.includes('not found')) {
-        errorMsg = 'Database table not found. Please run CREATE_USER_PROFILES_TABLE.sql in Supabase SQL Editor.'
+        errorMsg = 'Database table not found. Please run supabase/migrations/20260111124652_create_user_profiles.sql in Supabase SQL Editor.'
       } else if (error.message) {
         errorMsg += error.message
       } else {

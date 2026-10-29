@@ -12,7 +12,7 @@ This Edge Function acts as a proxy to the Hugging Face API, solving CORS issues.
 4. Click **Create a new function**
 5. Name: `generate-avatar`
 6. Copy the code from `index.ts` and paste it
-7. Add secret: `HUGGINGFACE_TOKEN` = `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` (or use the token from your .env)
+7. Add secret: `HUGGINGFACE_TOKEN` = your Hugging Face token (never commit it; use `supabase secrets set HUGGINGFACE_TOKEN=...`)
 8. Click **Deploy**
 
 ### Via CLI
