@@ -1286,10 +1286,10 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
                   className="glass-card rounded-2xl p-4 soft-shadow fade-in"
                   style={{
                     background: isSimplePost 
-                      ? 'linear-gradient(to bottom, rgba(255, 245, 235, 0.95), rgba(255, 250, 240, 0.95))' // Plus clair pour post simple
+                      ? 'linear-gradient(to bottom, rgba(255, 245, 235, 1), rgba(255, 250, 240, 1))' // Plus clair pour post simple
                       : isQuestUpdate 
-                      ? 'linear-gradient(to bottom, rgba(237, 233, 254, 0.9), rgba(243, 232, 255, 0.9))' // Violet léger pour update de quête
-                      : 'linear-gradient(to bottom, rgba(250, 240, 230, 0.9), rgba(245, 235, 220, 0.9))', // Beige par défaut
+                      ? 'linear-gradient(to bottom, rgba(237, 233, 254, 1), rgba(243, 232, 255, 1))' // Violet léger pour update de quête
+                      : 'linear-gradient(to bottom, rgba(250, 240, 230, 1), rgba(245, 235, 220, 1))', // Beige par défaut
                     border: isSimplePost 
                       ? '2px solid rgba(251, 191, 36, 0.4)' // Bordure dorée pour post simple
                       : isQuestUpdate 
