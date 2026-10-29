@@ -4,7 +4,7 @@ import './AccountPage.css'
 import './LoadingScreen.css'
 import LoadingParchment from './LoadingParchment'
 
-function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenRegistry }) {
+function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace }) {
   const [feedPosts, setFeedPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [newComment, setNewComment] = useState({})
@@ -665,7 +665,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
         {/* Top Navigation - Matching other pages style */}
         <div className="sticky top-0 z-50 glass-card border-b border-white/30" style={{ paddingTop: '0px', paddingBottom: '0px' }}>
           <div className="flex items-center gap-4" style={{ paddingLeft: '65px', paddingRight: '65px' }}>
-            {/* Left Buttons - Back to Village Place (only when not on village place) + Grand Registre */}
+            {/* Left Button - Back to Village Place (only when not on village place) */}
             {!isVillagePlace && onBackToVillage && (
               <button
                 onClick={onBackToVillage}
@@ -677,18 +677,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
                 ← Vers la place du village 🎪
               </button>
             )}
-            {onOpenRegistry && (
-              <button
-                onClick={onOpenRegistry}
-                className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
-                style={{
-                  fontFamily: "'Cinzel Decorative', serif",
-                }}
-              >
-                Grand Registre 📜
-              </button>
-            )}
-            
+
             {/* Archivus Character */}
             <div className="flex items-center gap-0 relative z-40 flex-1 ml-6">
               <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '130px' }}>

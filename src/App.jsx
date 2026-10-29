@@ -570,11 +570,6 @@ function App() {
               setShowFeed(false)
               setShowAccount(true)
             }}
-            onOpenRegistry={() => {
-              setShowVillagePlace(false)
-              setShowFeed(false)
-              setShowUserRegistry(true)
-            }}
           />
         ) : (
           <VillagePlacePage
