@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import AccountPage from './AccountPage'
 import UserRegistryPage from './UserRegistryPage'
 import FeedPage from './FeedPage'
+import VillagePlacePage from './VillagePlacePage'
 import LoadingScreen from './LoadingScreen'
 import './App.css'
 import './LoadingScreen.css'
@@ -560,19 +561,36 @@ function App() {
   if (showVillagePlace) {
     return (
       <>
-        <FeedPage
-          user={user}
-          isVillagePlace={true}
-          onBackToCamp={() => {
-            setShowVillagePlace(false)
-            setShowFeed(false)
-            setShowAccount(true)
-          }}
-          onOpenRegistry={() => {
-            setShowVillagePlace(false)
-            setShowUserRegistry(true)
-          }}
-        />
+        {showFeed ? (
+          <FeedPage
+            user={user}
+            isVillagePlace={false}
+            onBackToVillage={() => setShowFeed(false)}
+            onBackToCamp={() => {
+              setShowVillagePlace(false)
+              setShowFeed(false)
+              setShowAccount(true)
+            }}
+            onOpenRegistry={() => {
+              setShowVillagePlace(false)
+              setShowFeed(false)
+              setShowUserRegistry(true)
+            }}
+          />
+        ) : (
+          <VillagePlacePage
+            user={user}
+            onBack={() => {
+              setShowVillagePlace(false)
+              setShowAccount(true)
+            }}
+            onOpenRegistry={() => {
+              setShowVillagePlace(false)
+              setShowUserRegistry(true)
+            }}
+            onOpenFeed={() => setShowFeed(true)}
+          />
+        )}
         {/* Logout Button - Fixed bottom right */}
         <div className="fixed bottom-4 right-4 z-50 group">
           <div className="absolute bottom-full right-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
