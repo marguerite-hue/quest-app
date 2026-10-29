@@ -59,11 +59,10 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
     try {
       setLoading(true)
       
-      // Get all user profiles (excluding current user)
+      // Get all user profiles (current user included, they are part of the village)
       const { data: profiles, error: profilesError } = await supabase
         .from('user_profiles')
         .select('id, avatar_url, username, email')
-        .neq('id', user?.id)
         .limit(100)
       
       if (profilesError) {
@@ -272,13 +271,15 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {allPlayers.map((player) => (
+                  {allPlayers.map((player) => {
+                    const isMe = player.id === user?.id
+                    return (
                     <div
                       key={player.id}
                       className="glass-card rounded-3xl p-6 soft-shadow fade-in"
                       style={{
-                        background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.9), rgba(245, 235, 220, 0.9))',
-                        border: '2px solid rgba(139, 115, 85, 0.3)',
+                        background: 'linear-gradient(to bottom, rgba(250, 240, 230, 1), rgba(245, 235, 220, 1))',
+                        border: isMe ? '2px solid rgba(184, 134, 11, 0.6)' : '2px solid rgba(139, 115, 85, 0.3)',
                         boxShadow: 'inset 0 0 20px rgba(139, 115, 85, 0.1), 0 8px 32px rgba(0,0,0,0.1)',
                       }}
                     >
@@ -302,7 +303,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                               color: '#4b4136',
                             }}
                           >
-                            {player.username}
+                            {player.username}{isMe && ' (moi)'}
                           </p>
                           <p 
                             className="text-sm opacity-70 truncate"
@@ -314,6 +315,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                             Niveau {player.level}
                           </p>
                         </div>
+                        {!isMe && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
@@ -332,6 +334,7 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                         >
                           {followingIds.includes(player.id) ? '✓ Ami' : '+ Ajouter en ami'}
                         </button>
+                        )}
                       </div>
                       
                       <div className="space-y-2">
@@ -417,7 +420,8 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
