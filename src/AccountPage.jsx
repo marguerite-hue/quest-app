@@ -67,10 +67,19 @@ const UNIVERSES = {
 
 const CATEGORIES = {
   fitness: { emoji: '💪', name: 'Sport & Fitness', color: 'bg-teal-400', border: 'border-teal-600', icon: '🏋️' },
-  social: { emoji: '🎉', name: 'Social', color: 'bg-pink-400', border: 'border-pink-600', icon: '🎊' },
-  creative: { emoji: '🎨', name: 'Creative', color: 'bg-purple-400', border: 'border-purple-600', icon: '🖌️' },
-  learning: { emoji: '📚', name: 'Learning', color: 'bg-blue-400', border: 'border-blue-600', icon: '📖' },
-  wellness: { emoji: '🧘', name: 'Wellness', color: 'bg-green-400', border: 'border-green-600', icon: '🧘' },
+  learning: { emoji: '📚', name: 'Savoir & Apprentissage', color: 'bg-blue-400', border: 'border-blue-600', icon: '📖' },
+  career: { emoji: '💼', name: 'Carrière & Travail', color: 'bg-amber-400', border: 'border-amber-600', icon: '💼' },
+  creativity: { emoji: '🎨', name: 'Créativité & Projets', color: 'bg-purple-400', border: 'border-purple-600', icon: '🖌️' },
+  wellness: { emoji: '🧘', name: 'Bien-être & Santé', color: 'bg-green-400', border: 'border-green-600', icon: '🧘' },
+  social: { emoji: '👥', name: 'Social & Communauté', color: 'bg-pink-400', border: 'border-pink-600', icon: '🎊' },
+  creative: { emoji: '🎨', name: 'Créativité & Projets', color: 'bg-purple-400', border: 'border-purple-600', icon: '🖌️' }, // backward compat
+}
+
+const TIMELINE_LABELS = {
+  today: '⚡ Quotidienne',
+  'this week': '📅 Hebdomadaire',
+  'this month': '🌙 Mensuelle',
+  major: '🎯 Majeure',
 }
 
 const BACKGROUND_EFFECTS = ['none', 'gradient', 'animated-particles', 'pixel-art', 'holographic']
@@ -123,23 +132,18 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
     title: '',
     description: '',
     category: 'fitness',
-    xp_value: 70,
+    xp_value: 7,
     timeline: 'this week',
   })
 
-  // Calculate XP based on timeline
+  // XP par timeline: QUOTIDIENNE 1, HEBDOMADAIRE 7, MENSUELLE 30, MAJEURE 200
   const getXPForTimeline = (timeline) => {
     switch (timeline) {
-      case 'today':
-        return 10
-      case 'this week':
-        return 70
-      case 'this month':
-        return 300
-      case 'this year':
-        return 3650
-      default:
-        return 70
+      case 'today': return 1
+      case 'this week': return 7
+      case 'this month': return 30
+      case 'major': return 200
+      default: return 7
     }
   }
   const [arrangeMode, setArrangeMode] = useState(false)
@@ -164,13 +168,22 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   const [selectedCompanion, setSelectedCompanion] = useState(null)
   const [showAllPlayers, setShowAllPlayers] = useState(false)
   const [allPlayers, setAllPlayers] = useState([])
+  const [companions, setCompanions] = useState([])
+  const [followingIds, setFollowingIds] = useState([])
   const pageRef = useRef(null)
+  const [, setTimeTick] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => setTimeTick(t => t + 1), 15000)
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     loadProfile()
     loadQuests()
     loadQuestBookImage()
     loadAllPlayers()
+    loadCompanions()
     loadVillageEchos()
     
     // Refresh echos every 5 seconds (instant notifications)
@@ -236,6 +249,116 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
     }
   }
 
+  const loadCompanions = async () => {
+    if (!user?.id) return
+    
+    try {
+      // Load following relationships
+      const { data: follows, error: followsError } = await supabase
+        .from('user_follows')
+        .select('following_id')
+        .eq('follower_id', user.id)
+      
+      if (followsError) throw followsError
+      
+      const followingIds = (follows || []).map(f => f.following_id)
+      setFollowingIds(followingIds)
+      
+      if (followingIds.length === 0) {
+        setCompanions([])
+        return
+      }
+      
+      // Load companion profiles
+      const { data: companionProfiles, error: profilesError } = await supabase
+        .from('user_profiles')
+        .select('id, avatar_url, username, email')
+        .in('id', followingIds)
+      
+      if (profilesError) throw profilesError
+      
+      // Load companion stats
+      const { data: companionQuests } = await supabase
+        .from('quests')
+        .select('user_id, status, xp_value')
+        .in('user_id', followingIds)
+      
+      // Create a map of user_id -> quests
+      const questsByUser = {}
+      ;(companionQuests || []).forEach(quest => {
+        if (!questsByUser[quest.user_id]) {
+          questsByUser[quest.user_id] = []
+        }
+        questsByUser[quest.user_id].push(quest)
+      })
+      
+      // Calculate stats for each companion
+      const companionsWithStats = (companionProfiles || []).map(companion => {
+        const quests = questsByUser[companion.id] || []
+        const completedQuests = quests.filter(q => q.status === 'completed')
+        const activeQuests = quests.filter(q => q.status !== 'completed')
+        const totalXP = completedQuests.reduce((sum, q) => sum + (q.xp_value || 0), 0)
+        const level = Math.floor(totalXP / 100) + 1
+        
+        return {
+          ...companion,
+          completed_quests: completedQuests.length,
+          active_quests: activeQuests.length,
+          total_xp: totalXP,
+          level: level
+        }
+      })
+      
+      setCompanions(companionsWithStats)
+    } catch (error) {
+      console.error('Error loading companions:', error)
+    }
+  }
+
+  const handleFollowUser = async (userId) => {
+    if (!user?.id) return
+    
+    try {
+      const isFollowing = followingIds.includes(userId)
+      
+      if (isFollowing) {
+        // Unfollow
+        const { error } = await supabase
+          .from('user_follows')
+          .delete()
+          .eq('follower_id', user.id)
+          .eq('following_id', userId)
+        
+        if (error) throw error
+        
+        setFollowingIds(prev => prev.filter(id => id !== userId))
+        setSuccessMessage('Tu ne suis plus cet aventurier')
+      } else {
+        // Follow
+        const { error } = await supabase
+          .from('user_follows')
+          .insert({
+            follower_id: user.id,
+            following_id: userId
+          })
+        
+        if (error) throw error
+        
+        setFollowingIds(prev => [...prev, userId])
+        setSuccessMessage('Tu suis maintenant cet aventurier !')
+      }
+      
+      setTimeout(() => setSuccessMessage(''), 3000)
+      
+      // Reload companions
+      await loadCompanions()
+    } catch (error) {
+      console.error('Error following/unfollowing user:', error)
+      setErrorMessage('Erreur lors de la mise à jour')
+      setTimeout(() => setErrorMessage(''), 3000)
+    }
+  }
+
   const loadVillageEchos = async () => {
     try {
       const echos = []
@@ -244,11 +367,11 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const { data: recentCompletedQuests, error: questsError } = await supabase
         .from('quests')
-        .select('id, title, user_id, created_by, created_at')
+        .select('id, title, user_id, created_by, created_at, updated_at')
         .eq('status', 'completed')
-        .gte('created_at', oneDayAgo)
+        .gte('updated_at', oneDayAgo)
         // Removed .neq('user_id', user?.id) to include own quests
-        .order('created_at', { ascending: false })
+        .order('updated_at', { ascending: false })
         .limit(10)
       
       if (questsError) throw questsError
@@ -275,7 +398,8 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         }
         
         const username = userProfile?.username || quest.created_by?.split('@')[0] || 'Un aventurier'
-        const timeDiff = Date.now() - new Date(quest.created_at).getTime()
+        const completedAt = quest.updated_at || quest.created_at
+        const timeDiff = Date.now() - new Date(completedAt).getTime()
         const timeAgo = formatTimeAgo(timeDiff)
         
         echos.push({
@@ -283,7 +407,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           message: `🏆 ${username} a complété la quête "${quest.title}" !`,
           time: timeAgo,
           type: 'achievement',
-          timestamp: new Date(quest.created_at).getTime()
+          timestamp: new Date(completedAt).getTime()
         })
       }
       
@@ -408,7 +532,9 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   }
 
   const formatTimeAgo = (milliseconds) => {
-    const minutes = Math.floor(milliseconds / 60000)
+    if (milliseconds < 0 || !Number.isFinite(milliseconds)) return 'À l\'instant'
+    const seconds = Math.floor(milliseconds / 1000)
+    const minutes = Math.floor(seconds / 60)
     const hours = Math.floor(minutes / 60)
     const days = Math.floor(hours / 24)
     
@@ -418,6 +544,8 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       return `Il y a ${hours} heure${hours > 1 ? 's' : ''}`
     } else if (minutes > 0) {
       return `Il y a ${minutes} min`
+    } else if (seconds > 0) {
+      return `Il y a ${seconds} sec`
     } else {
       return 'À l\'instant'
     }
@@ -460,18 +588,9 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         }
         break
       
-      case 'this year':
-        // 12 checkpoints (1 per month)
-        const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
-        for (let i = 0; i < 12; i++) {
-          const date = new Date(startDate)
-          date.setMonth(date.getMonth() + i)
-          checkpoints.push({
-            date,
-            label: months[date.getMonth()],
-            completed: false
-          })
-        }
+      case 'major':
+        // 1 checkpoint pour quête majeure
+        checkpoints.push({ date: startDate, label: 'Quête majeure', completed: false })
         break
       
       default:
@@ -527,7 +646,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
   // Get active recurring quests (not completed, with timeline)
   const recurringQuests = effectiveQuests.filter(q => 
     q.status !== 'completed' && 
-    (q.timeline === 'this week' || q.timeline === 'this month' || q.timeline === 'this year')
+    (q.timeline === 'today' || q.timeline === 'this week' || q.timeline === 'this month')
   )
 
   const loadQuestBookImage = async () => {
@@ -1549,26 +1668,16 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
       {/* Top Navigation - Y2K Style */}
         <div className="sticky top-0 z-50 glass-card border-b border-white/30" style={{ paddingTop: '0px', paddingBottom: '0px' }}>
           <div className="flex items-center justify-between gap-4" style={{ paddingLeft: '65px', paddingRight: '65px' }}>
-          {/* Left Navigation Buttons */}
+          {/* Left Navigation Button */}
           <div className="flex items-center gap-3">
             <button
-              onClick={onGoToVillagePlace || onBack}
+              onClick={onGoToVillagePlace || onOpenFeed}
               className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
               style={{
                 fontFamily: "'Cinzel Decorative', serif",
               }}
             >
               ← Vers la place du village 🎪
-            </button>
-
-            <button
-              onClick={onOpenFeed}
-              className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
-              style={{
-                fontFamily: "'Cinzel Decorative', serif",
-              }}
-            >
-              ← Vers le fil d'actualité 📜
             </button>
           </div>
           
@@ -1637,145 +1746,152 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
         </div>
       )}
 
-      {/* Écho du Village Button - Bottom Left with Live Notifications */}
-      <div className="fixed z-50 flex flex-col items-start gap-3" style={{ bottom: '24px', left: '35px' }}>
-        {/* Live notifications stack - appear above button */}
-        <div className="flex flex-col gap-2 max-h-[400px] overflow-hidden">
-          {liveEchoNotifications.map((notification) => (
-            <div
-              key={notification.notificationId}
-              className="px-4 py-3 rounded-2xl max-w-sm fade-in cursor-pointer hover:scale-105 transition-all"
-              onClick={() => {
-                const isClickable = (notification.type === 'achievement' || 
-                  notification.message.includes('complété') || 
-                  notification.message.includes('quête') || 
-                  notification.message.includes('commenté') || 
-                  notification.message.includes('réagi') ||
-                  notification.message.includes('réaction') ||
-                  (notification.type === 'info' && notification.message.includes('joueur')))
-                
-                if (isClickable) {
-                  handleNotificationClick(notification)
-                }
-              }}
-              style={{
-                background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.98), rgba(245, 235, 220, 0.98))',
-                border: '2px solid rgba(139, 115, 85, 0.4)',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-              }}
-            >
-              <div className="text-sm font-semibold text-amber-900 mb-1">
-                {notification.message}
-              </div>
-              <div className="text-xs text-amber-700/70 font-medium">
-                {notification.time}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Écho du Village Button */}
-        <button
-          onClick={() => setVillageEchosOpen(true)}
-          className="px-6 py-3 rounded-3xl flex items-center gap-2 relative transition-all hover:scale-105"
-          style={{
-            fontFamily: "'Cinzel Decorative', serif",
-            background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.2), rgba(126, 34, 206, 0.2))',
-            backdropFilter: 'blur(8px)',
-            border: '2px solid rgba(147, 51, 234, 0.4)',
-            color: '#f4c99c',
-            boxShadow: '0 2px 12px rgba(147, 51, 234, 0.15)',
-            fontWeight: '600',
-          }}
-        >
-          <span className="text-xl">📜</span>
-          <span>Écho du Village</span>
-        </button>
-      </div>
-
-      {/* Écho du Village Modal */}
-      {villageEchosOpen && (
-        <div 
-          className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-end justify-start z-50" 
-          style={{ padding: '16px', paddingBottom: '24px', paddingLeft: '35px' }}
-          onClick={() => setVillageEchosOpen(false)}
-        >
-          <div 
-            className="rounded-2xl p-6 max-w-md w-full max-h-[70vh] overflow-y-auto soft-shadow fade-in"
-            onClick={(e) => e.stopPropagation()}
+      {/* Live notifications stack - Top of Écho du Village */}
+      <div className="fixed z-50 flex flex-col items-start gap-2" style={{ bottom: '500px', left: '35px', maxWidth: '320px' }}>
+        {liveEchoNotifications.map((notification) => (
+          <div
+            key={notification.notificationId}
+            className="px-4 py-3 rounded-2xl w-full fade-in cursor-pointer hover:scale-105 transition-all"
+            onClick={() => {
+              const isClickable = (notification.type === 'achievement' || 
+                notification.message.includes('complété') || 
+                notification.message.includes('quête') || 
+                notification.message.includes('commenté') || 
+                notification.message.includes('réagi') ||
+                notification.message.includes('réaction') ||
+                (notification.type === 'info' && notification.message.includes('joueur')))
+              
+              if (isClickable) {
+                handleNotificationClick(notification)
+              }
+            }}
             style={{
-              background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-              border: '2px solid rgba(139, 115, 85, 0.3)',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
-              marginBottom: '80px',
+              background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.98), rgba(245, 235, 220, 0.98))',
+              border: '2px solid rgba(139, 115, 85, 0.4)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
             }}
           >
-            <div className="flex justify-between items-center mb-4">
-              <h2 
-                className="text-2xl font-bold flex items-center gap-2"
+            <div className="text-sm font-semibold text-amber-900 mb-1">
+              {notification.message}
+            </div>
+            <div className="text-xs text-amber-700/70 font-medium">
+              {notification.timestamp ? formatTimeAgo(Date.now() - notification.timestamp) : (notification.time || 'À l\'instant')}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Écho du Village - Fixed Bottom Left */}
+      <div className="fixed z-40" style={{ bottom: '24px', width: '320px', left: '35px' }}>
+        <div 
+          className={`glass-card rounded-3xl soft-shadow relative overflow-hidden transition-all duration-300 ${
+            villageEchosOpen ? 'p-4' : 'p-3'
+          }`}
+          style={{
+            background: 'linear-gradient(to bottom, rgba(147, 51, 234, 0.95), rgba(126, 34, 206, 0.95))',
+            border: '2px solid rgba(147, 51, 234, 0.6)',
+            boxShadow: 'inset 0 0 20px rgba(147, 51, 234, 0.3), 0 8px 32px rgba(0,0,0,0.2)',
+            maxHeight: villageEchosOpen ? '400px' : 'auto',
+          }}
+        >
+          {/* Parchemin texture effect */}
+          <div className="absolute inset-0 opacity-10" style={{
+            backgroundImage: `
+              repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 255, 255, 0.1) 2px, rgba(255, 255, 255, 0.1) 4px),
+              repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255, 255, 255, 0.1) 2px, rgba(255, 255, 255, 0.1) 4px)
+            `,
+            pointerEvents: 'none',
+          }}></div>
+          
+          <div className="relative z-10">
+            <div 
+              className={`text-lg font-semibold text-center flex items-center justify-center gap-2 cursor-pointer hover:opacity-80 transition-opacity ${
+                villageEchosOpen ? 'mb-3' : 'mb-0'
+              }`}
+              onClick={() => setVillageEchosOpen(!villageEchosOpen)}
+              style={{ 
+                fontFamily: "'Cinzel Decorative', serif",
+                color: '#ffffff'
+              }}
+            >
+              <span className="text-2xl">📜</span>
+              <span>Écho du Village</span>
+              <span
+                className="ml-2 text-white transition-transform duration-300"
                 style={{
-                  fontFamily: "'Cinzel Decorative', serif",
-                  color: '#4b4136',
+                  transform: villageEchosOpen ? 'rotate(180deg)' : 'rotate(0deg)',
                 }}
               >
-                <span className="text-2xl">📜</span>
-                <span>Écho du Village</span>
-              </h2>
-              <button 
-                onClick={() => setVillageEchosOpen(false)} 
-                className="text-3xl font-semibold hover:scale-110 transition-transform"
-                style={{ color: '#4b4136' }}
-              >
-                ×
-              </button>
+                <svg 
+                  className="w-5 h-5" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M19 9l-7 7-7-7" 
+                  />
+                </svg>
+              </span>
             </div>
             
-            <div className="space-y-2">
-              {villageEchos.length > 0 ? (
-                villageEchos.map((echo) => {
-                  // Déterminer si la notification est cliquable
-                  const isClickable = (echo.type === 'achievement' || 
-                    echo.message.includes('complété') || 
-                    echo.message.includes('quête') || 
-                    echo.message.includes('commenté') || 
-                    echo.message.includes('réagi') ||
-                    echo.message.includes('réaction') ||
-                    (echo.type === 'info' && echo.message.includes('joueur')))
-                  
-                  return (
-                    <div
-                      key={echo.id}
-                      onClick={() => {
-                        if (isClickable) {
-                          handleNotificationClick(echo)
-                          setVillageEchosOpen(false)
-                        }
-                      }}
-                      className={`p-3 rounded-2xl bg-white/40 border border-amber-800/20 fade-in ${
-                        isClickable ? 'cursor-pointer hover:bg-white/60 transition-all' : ''
-                      }`}
-                      style={{
-                        animationDelay: `${echo.id * 0.1}s`,
-                      }}
-                    >
-                      <div className="text-sm font-semibold text-amber-900 mb-1">
-                        {echo.message}
+            <div 
+              className="overflow-hidden transition-all duration-300 ease-in-out"
+              style={{
+                maxHeight: villageEchosOpen ? '320px' : '0px',
+                opacity: villageEchosOpen ? 1 : 0,
+              }}
+            >
+              <div className="space-y-2 overflow-y-auto scrollbar-thin scrollbar-thumb-white/30 scrollbar-track-transparent">
+                {villageEchos.length > 0 ? (
+                  villageEchos.map((echo) => {
+                    // Déterminer si la notification est cliquable
+                    const isClickable = (echo.type === 'achievement' || 
+                      echo.message.includes('complété') || 
+                      echo.message.includes('quête') || 
+                      echo.message.includes('commenté') || 
+                      echo.message.includes('réagi') ||
+                      echo.message.includes('réaction') ||
+                      (echo.type === 'info' && echo.message.includes('joueur')))
+                    
+                    return (
+                      <div
+                        key={echo.id}
+                        onClick={() => {
+                          if (isClickable) {
+                            handleNotificationClick(echo)
+                            setVillageEchosOpen(false)
+                          }
+                        }}
+                        className={`p-3 rounded-2xl bg-white/90 border border-white/40 fade-in ${
+                          isClickable ? 'cursor-pointer hover:bg-white transition-all' : ''
+                        }`}
+                        style={{
+                          animationDelay: `${echo.id * 0.1}s`,
+                        }}
+                      >
+                        <div className="text-sm font-semibold text-purple-900 mb-1">
+                          {echo.message}
+                        </div>
+                        <div className="text-xs text-purple-700/70 font-medium">
+                          {echo.timestamp ? formatTimeAgo(Date.now() - echo.timestamp) : (echo.time || 'À l\'instant')}
+                        </div>
                       </div>
-                      <div className="text-xs text-amber-700/70 font-medium">
-                        {echo.time}
-                      </div>
-                    </div>
-                  )
-                })
-              ) : (
-                <div className="text-sm text-amber-800/60 text-center py-4 font-medium">
-                  Aucun écho pour le moment...
-                </div>
-              )}
+                    )
+                  })
+                ) : (
+                  <div className="text-sm text-white/80 text-center py-4 font-medium">
+                    Aucun écho pour le moment...
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Ta Progression - Fixed Left */}
       <div className="fixed z-40" style={{ top: '162px', width: '320px', left: '35px' }}>
@@ -2098,7 +2214,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
             background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.9), rgba(245, 235, 220, 0.9))',
             border: '2px solid rgba(139, 115, 85, 0.3)',
             boxShadow: 'inset 0 0 20px rgba(139, 115, 85, 0.1), 0 8px 32px rgba(0,0,0,0.1)',
-            width: '240px',
+            width: '255px',
           }}
         >
           <h3 
@@ -2111,30 +2227,11 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
             Tes compagnons
           </h3>
           <div className="flex flex-wrap gap-2 justify-center">
-            {/* TODO: Load companions from database */}
-            {/* For now, showing placeholder */}
-            {[].map((companion, index) => (
+            {companions.map((companion) => (
               <button
-                key={companion.id || index}
-                onClick={async () => {
-                  // Load companion stats
-                  const { data: companionQuests } = await supabase
-                    .from('quests')
-                    .select('status, xp_value')
-                    .eq('user_id', companion.id)
-                  
-                  const completedQuests = (companionQuests || []).filter(q => q.status === 'completed')
-                  const activeQuests = (companionQuests || []).filter(q => q.status !== 'completed')
-                  const totalXP = completedQuests.reduce((sum, q) => sum + (q.xp_value || 0), 0)
-                  const level = Math.floor(totalXP / 100) + 1
-                  
-                  setSelectedCompanion({
-                    ...companion,
-                    completed_quests: completedQuests.length,
-                    active_quests: activeQuests.length,
-                    total_xp: totalXP,
-                    level: level
-                  })
+                key={companion.id}
+                onClick={() => {
+                  setSelectedCompanion(companion)
                 }}
                 className="rounded-full overflow-hidden hover:scale-110 transition-transform cursor-pointer"
                 style={{
@@ -2143,6 +2240,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                   border: '2px solid rgba(139, 115, 85, 0.3)',
                   boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                 }}
+                title={companion.username || companion.email?.split('@')[0] || 'Compagnon'}
               >
                 <img
                   src={companion.avatar_url || 'https://via.placeholder.com/40'}
@@ -2151,7 +2249,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                 />
               </button>
             ))}
-            {[].length === 0 && (
+            {companions.length === 0 && (
               <div 
                 className="w-full text-center cursor-pointer hover:opacity-80 transition-opacity"
                 onClick={() => setShowAllPlayers(true)}
@@ -2160,24 +2258,19 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                   Ton campement semble bien calme...
                 </p>
                 <p className="text-xs italic" style={{ color: '#4b4136' }}>
-                  Les meilleures aventures se vivent à plusieurs ! Invite des amis à te rejoindre pour partager vos quêtes et entrer dans la légende.
+                  Clique ici pour découvrir les aventuriers du village et suivre tes compagnons favoris !
                 </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Spacing between Tes compagnons and buttons */}
-        <div style={{ height: '16px' }}></div>
-
-        {/* Aménage ta Tente Menu */}
+        {/* Aménage ta Tente - sous Tes compagnons */}
         <div 
-          className="relative w-full" 
-          style={{ width: '240px' }}
+          className="relative"
+          style={{ width: '255px' }}
           onMouseLeave={() => {
-            tentMenuTimeoutRef.current = setTimeout(() => {
-              setTentMenuOpen(false)
-            }, 300)
+            tentMenuTimeoutRef.current = setTimeout(() => setTentMenuOpen(false), 300)
           }}
           onMouseEnter={() => {
             if (tentMenuTimeoutRef.current) {
@@ -2215,105 +2308,44 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                     setShowSettingsModal(true)
                     setTentMenuOpen(false)
                   }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.95)'
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = ''
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = ''
-                  }}
+                  onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)' }}
+                  onMouseUp={(e) => { e.currentTarget.style.transform = '' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = '' }}
                   className="glass-card rounded-full p-3 soft-shadow hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer"
                   style={{
                     background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
                     border: '2px solid rgba(139, 115, 85, 0.3)',
                     boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                    width: '48px',
-                    height: '48px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    width: '48px', height: '48px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
                 >
                   <span className="text-xl">🖼️</span>
                 </button>
                 <div className="absolute right-full mr-3 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-[70]">
-                  <div 
-                    className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold"
-                    style={{
-                      background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                      border: '2px solid rgba(139, 115, 85, 0.3)',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                      color: '#4b4136',
-                    }}
-                  >
+                  <div className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold" style={{ background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))', border: '2px solid rgba(139, 115, 85, 0.3)', boxShadow: '0 4px 16px rgba(0,0,0,0.2)', color: '#4b4136' }}>
                     Choisis un fond
                   </div>
                 </div>
               </div>
-
               {/* Accroche des posters */}
               <div className="relative group">
-                <button
-                  className="glass-card rounded-full p-3 soft-shadow cursor-not-allowed opacity-50"
-                  style={{
-                    background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                    border: '2px solid rgba(139, 115, 85, 0.3)',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                    width: '48px',
-                    height: '48px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  disabled
-                >
+                <button className="glass-card rounded-full p-3 soft-shadow cursor-not-allowed opacity-50" style={{ background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))', border: '2px solid rgba(139, 115, 85, 0.3)', boxShadow: '0 4px 16px rgba(0,0,0,0.2)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} disabled>
                   <span className="text-xl">🖼️</span>
                 </button>
                 <div className="absolute right-full mr-3 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-[70]">
-                  <div 
-                    className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold"
-                    style={{
-                      background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                      border: '2px solid rgba(139, 115, 85, 0.3)',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                      color: '#4b4136',
-                    }}
-                  >
+                  <div className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold" style={{ background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))', border: '2px solid rgba(139, 115, 85, 0.3)', boxShadow: '0 4px 16px rgba(0,0,0,0.2)', color: '#4b4136' }}>
                     Accroche des posters (bientôt disponible)
                   </div>
                 </div>
               </div>
-
               {/* Ajoute des stickers */}
               <div className="relative group">
-                <button
-                  className="glass-card rounded-full p-3 soft-shadow cursor-not-allowed opacity-50"
-                  style={{
-                    background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                    border: '2px solid rgba(139, 115, 85, 0.3)',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                    width: '48px',
-                    height: '48px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  disabled
-                >
+                <button className="glass-card rounded-full p-3 soft-shadow cursor-not-allowed opacity-50" style={{ background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))', border: '2px solid rgba(139, 115, 85, 0.3)', boxShadow: '0 4px 16px rgba(0,0,0,0.2)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} disabled>
                   <span className="text-xl">✨</span>
                 </button>
                 <div className="absolute right-full mr-3 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-[70]">
-                  <div 
-                    className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold"
-                    style={{
-                      background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
-                      border: '2px solid rgba(139, 115, 85, 0.3)',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                      color: '#4b4136',
-                    }}
-                  >
+                  <div className="glass-card px-3 py-2 rounded-2xl text-sm font-semibold" style={{ background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))', border: '2px solid rgba(139, 115, 85, 0.3)', boxShadow: '0 4px 16px rgba(0,0,0,0.2)', color: '#4b4136' }}>
                     Ajoute des stickers (bientôt disponible)
                   </div>
                 </div>
@@ -2322,14 +2354,14 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
           )}
         </div>
 
-      </div>
+        {/* Spacing between Aménage ta Tente and Quest Book */}
+        <div style={{ height: '16px' }}></div>
 
-      {/* Quest Book - Carnet de Quêtes avec image - Above XP Bar */}
-      <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-40 w-full flex justify-center items-center px-4">
+        {/* Quest Book - Carnet de Quêtes */}
         <div
           className="relative cursor-pointer group transition-all duration-300 hover:scale-105"
           onClick={() => setShowQuestBook(true)}
-          style={{ maxWidth: '450px', width: '100%' }}
+          style={{ width: '255px' }}
         >
           {/* Subtle glow effect on hover */}
           <div className="absolute -inset-2 bg-gradient-to-br from-amber-200/30 via-pink-200/20 to-purple-200/30 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl" />
@@ -2345,16 +2377,21 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                   filter: 'drop-shadow(0 10px 30px rgba(0, 0, 0, 0.2))',
                 }}
                 onError={(e) => {
-                  e.target.src = 'https://via.placeholder.com/400x300?text=Carnet+de+Quêtes'
+                  e.target.src = 'https://via.placeholder.com/240x180?text=Carnet+de+Quêtes'
                 }}
               />
             ) : (
-              <div className="w-full h-96 flex items-center justify-center glass-card rounded-3xl">
-                <p className="text-purple-700 font-semibold">Chargement du carnet...</p>
+              <div className="w-full h-48 flex items-center justify-center glass-card rounded-3xl" style={{
+                background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.9), rgba(245, 235, 220, 0.9))',
+                border: '2px solid rgba(139, 115, 85, 0.3)',
+              }}>
+                <p className="text-sm font-semibold" style={{ color: '#4b4136' }}>Chargement...</p>
               </div>
             )}
           </div>
         </div>
+
+
       </div>
 
       {/* Bottom Stats Bar - Y2K Style (Floating Frosted Glass) */}
@@ -2427,6 +2464,23 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                   boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
                 }}
               />
+              
+              {/* Follow/Unfollow Button */}
+              <button
+                onClick={() => handleFollowUser(selectedCompanion.id)}
+                className="px-6 py-2 rounded-2xl font-semibold transition-all hover:scale-105"
+                style={{
+                  background: followingIds.includes(selectedCompanion.id)
+                    ? 'linear-gradient(to bottom, rgba(139, 115, 85, 0.3), rgba(101, 84, 62, 0.3))'
+                    : 'linear-gradient(to bottom, rgba(139, 115, 85, 0.9), rgba(101, 84, 62, 0.9))',
+                  border: '2px solid rgba(184, 134, 11, 0.6)',
+                  color: followingIds.includes(selectedCompanion.id) ? '#4b4136' : '#fef3c7',
+                  fontFamily: "'Cinzel Decorative', serif",
+                  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+                }}
+              >
+                {followingIds.includes(selectedCompanion.id) ? '✓ Suivi' : '+ Suivre'}
+              </button>
             </div>
 
             <div className="space-y-3">
@@ -2495,50 +2549,68 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {allPlayers.map((player) => (
-                <button
-                  key={player.id}
-                  onClick={async () => {
-                    // Load companion stats
-                    const { data: companionQuests } = await supabase
-                      .from('quests')
-                      .select('status, xp_value')
-                      .eq('user_id', player.id)
-                    
-                    const completedQuests = (companionQuests || []).filter(q => q.status === 'completed')
-                    const activeQuests = (companionQuests || []).filter(q => q.status !== 'completed')
-                    const totalXP = completedQuests.reduce((sum, q) => sum + (q.xp_value || 0), 0)
-                    const level = Math.floor(totalXP / 100) + 1
-                    
-                    setSelectedCompanion({
-                      ...player,
-                      completed_quests: completedQuests.length,
-                      active_quests: activeQuests.length,
-                      total_xp: totalXP,
-                      level: level
-                    })
-                    setShowAllPlayers(false)
-                  }}
-                  className="flex flex-col items-center p-3 rounded-xl hover:scale-105 transition-transform cursor-pointer"
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.4)',
-                    border: '2px solid rgba(139, 115, 85, 0.3)',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  }}
-                >
-                  <img
-                    src={player.avatar_url || 'https://via.placeholder.com/60'}
-                    alt={player.username || 'Player'}
-                    className="w-16 h-16 rounded-full object-cover mb-2"
-                    style={{
-                      border: '2px solid rgba(139, 115, 85, 0.3)',
-                    }}
-                  />
-                  <p className="text-xs font-semibold text-center" style={{ color: '#4b4136' }}>
-                    {player.username || player.email?.split('@')[0] || 'Joueur'}
-                  </p>
-                </button>
-              ))}
+              {allPlayers.map((player) => {
+                const isFollowing = followingIds.includes(player.id)
+                return (
+                  <div key={player.id} className="relative">
+                    <button
+                      onClick={async () => {
+                        // Load companion stats
+                        const { data: companionQuests } = await supabase
+                          .from('quests')
+                          .select('status, xp_value')
+                          .eq('user_id', player.id)
+                        
+                        const completedQuests = (companionQuests || []).filter(q => q.status === 'completed')
+                        const activeQuests = (companionQuests || []).filter(q => q.status !== 'completed')
+                        const totalXP = completedQuests.reduce((sum, q) => sum + (q.xp_value || 0), 0)
+                        const level = Math.floor(totalXP / 100) + 1
+                        
+                        setSelectedCompanion({
+                          ...player,
+                          completed_quests: completedQuests.length,
+                          active_quests: activeQuests.length,
+                          total_xp: totalXP,
+                          level: level
+                        })
+                        setShowAllPlayers(false)
+                      }}
+                      className="flex flex-col items-center p-3 rounded-xl hover:scale-105 transition-transform cursor-pointer w-full"
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.4)',
+                        border: isFollowing ? '2px solid rgba(34, 197, 94, 0.6)' : '2px solid rgba(139, 115, 85, 0.3)',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                      }}
+                    >
+                      <div className="relative">
+                        <img
+                          src={player.avatar_url || 'https://via.placeholder.com/60'}
+                          alt={player.username || 'Player'}
+                          className="w-16 h-16 rounded-full object-cover mb-2"
+                          style={{
+                            border: '2px solid rgba(139, 115, 85, 0.3)',
+                          }}
+                        />
+                        {isFollowing && (
+                          <div 
+                            className="absolute -top-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-xs"
+                            style={{
+                              background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(22, 163, 74, 0.9))',
+                              border: '2px solid white',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                            }}
+                          >
+                            ✓
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs font-semibold text-center" style={{ color: '#4b4136' }}>
+                        {player.username || player.email?.split('@')[0] || 'Joueur'}
+                      </p>
+                    </button>
+                  </div>
+                )
+              })}
               {allPlayers.length === 0 && (
                 <p className="col-span-full text-center text-sm italic" style={{ color: '#4b4136' }}>
                   Aucun autre joueur pour le moment
@@ -3104,10 +3176,10 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                   }}
                 >
                   <option value="all">Toutes les durées</option>
-                  <option value="today">Aujourd'hui</option>
-                  <option value="this week">Cette semaine</option>
-                  <option value="this month">Ce mois</option>
-                  <option value="this year">Cette année</option>
+                  <option value="today">⚡ Quotidienne</option>
+                  <option value="this week">📅 Hebdomadaire</option>
+                  <option value="this month">🌙 Mensuelle</option>
+                  <option value="major">🎯 Majeure</option>
                 </select>
               </div>
             </div>
@@ -3219,7 +3291,7 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                                       fontFamily: "'Cormorant Garamond', serif",
                                     }}
                                   >
-                                    {quest.timeline}
+                                    {TIMELINE_LABELS[quest.timeline] || quest.timeline}
                                   </span>
                                 </div>
                               </div>
@@ -4460,7 +4532,9 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                     fontFamily: "'Cormorant Garamond', serif",
                   }}
                 >
-                  {Object.entries(CATEGORIES).map(([key, cat]) => (
+                  {Object.entries(CATEGORIES)
+                    .filter(([key]) => key !== 'creative')
+                    .map(([key, cat]) => (
                     <option key={key} value={key}>
                       {cat.emoji} {cat.name}
                     </option>
@@ -4496,10 +4570,10 @@ function AccountPage({ user, quests, onBack, onGoToVillagePlace, onOpenRegistry,
                     fontFamily: "'Cormorant Garamond', serif",
                   }}
                 >
-                  <option value="today">Aujourd'hui</option>
-                  <option value="this week">Cette semaine</option>
-                  <option value="this month">Ce mois</option>
-                  <option value="this year">Cette année</option>
+                  <option value="today">⚡ QUOTIDIENNE = 1 XP/jour</option>
+                  <option value="this week">📅 HEBDOMADAIRE = 7 XP/semaine</option>
+                  <option value="this month">🌙 MENSUELLE = 30 XP/mois</option>
+                  <option value="major">🎯 MAJEURE = 200 XP/quête</option>
                 </select>
               </div>
 

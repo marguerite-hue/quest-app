@@ -6,10 +6,53 @@ import './LoadingScreen.css'
 function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
   const [allPlayers, setAllPlayers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [followingIds, setFollowingIds] = useState([])
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     loadAllPlayers()
   }, [user])
+
+  const loadFollowingIds = async () => {
+    if (!user?.id) return []
+    const { data: follows } = await supabase
+      .from('user_follows')
+      .select('following_id')
+      .eq('follower_id', user.id)
+    return (follows || []).map(f => f.following_id)
+  }
+
+  const handleFollowUser = async (playerId) => {
+    if (!user?.id) return
+    try {
+      const isFollowing = followingIds.includes(playerId)
+      if (isFollowing) {
+        const { error } = await supabase
+          .from('user_follows')
+          .delete()
+          .eq('follower_id', user.id)
+          .eq('following_id', playerId)
+        if (error) throw error
+        setFollowingIds(prev => prev.filter(id => id !== playerId))
+        setMessage('Tu ne suis plus cet aventurier')
+      } else {
+        const { error } = await supabase
+          .from('user_follows')
+          .insert({
+            follower_id: user.id,
+            following_id: playerId
+          })
+        if (error) throw error
+        setFollowingIds(prev => [...prev, playerId])
+        setMessage('Aventurier ajouté en ami !')
+      }
+      setTimeout(() => setMessage(''), 3000)
+    } catch (error) {
+      console.error('Error following/unfollowing:', error)
+      setMessage('Erreur lors de l\'ajout')
+      setTimeout(() => setMessage(''), 3000)
+    }
+  }
 
   const loadAllPlayers = async () => {
     try {
@@ -46,6 +89,10 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
         return profile
       }))
       
+      // Load who the current user is following
+      const following = await loadFollowingIds()
+      setFollowingIds(following)
+
       // OPTIMIZATION: Load ALL quests in a single query instead of one per player
       const profileIds = profilesWithEmail.map(p => p.id).filter(Boolean)
       const { data: allQuests } = await supabase
@@ -186,6 +233,22 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
           </div>
         </div>
 
+        {/* Message toast */}
+        {message && (
+          <div 
+            className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-2xl font-semibold"
+            style={{
+              fontFamily: "'Cormorant Garamond', serif",
+              background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.98), rgba(245, 235, 220, 0.98))',
+              border: '2px solid rgba(139, 115, 85, 0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              color: '#4b4136',
+            }}
+          >
+            {message}
+          </div>
+        )}
+
         {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 pt-8 pb-24 relative" style={{ zIndex: 1 }}>
           {loading ? (
@@ -292,6 +355,24 @@ function UserRegistryPage({ user, onBackToVillage, onBackToCamp }) {
                             Niveau {player.level}
                           </p>
                         </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleFollowUser(player.id)
+                          }}
+                          className="px-4 py-2 rounded-2xl font-semibold text-sm transition-all flex-shrink-0"
+                          style={{
+                            fontFamily: "'Cinzel Decorative', serif",
+                            background: followingIds.includes(player.id)
+                              ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(22, 163, 74, 0.9))'
+                              : 'linear-gradient(135deg, rgba(139, 115, 85, 0.9), rgba(101, 84, 62, 0.9))',
+                            border: '2px solid rgba(139, 115, 85, 0.4)',
+                            color: '#fef3c7',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                          }}
+                        >
+                          {followingIds.includes(player.id) ? '✓ Ami' : '+ Ajouter en ami'}
+                        </button>
                       </div>
                       
                       <div className="space-y-2">

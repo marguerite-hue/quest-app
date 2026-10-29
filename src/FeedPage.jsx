@@ -3,7 +3,7 @@ import { supabase } from './supabase'
 import './AccountPage.css'
 import './LoadingScreen.css'
 
-function FeedPage({ user, onBackToVillage, onBackToCamp }) {
+function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenRegistry }) {
   const [feedPosts, setFeedPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [newComment, setNewComment] = useState({})
@@ -13,8 +13,14 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
   const [userQuests, setUserQuests] = useState([])
   const [selectedQuest, setSelectedQuest] = useState(null)
   const [updateText, setUpdateText] = useState('')
-  const [visibility, setVisibility] = useState('public')
   const [posting, setPosting] = useState(false)
+  const [postType, setPostType] = useState(null) // 'nouvelle_quete', 'update_quete', 'discussion'
+  
+  // New quest fields
+  const [newQuestTitle, setNewQuestTitle] = useState('')
+  const [newQuestDescription, setNewQuestDescription] = useState('')
+  const [newQuestCategory, setNewQuestCategory] = useState('fitness')
+  const [newQuestTimeline, setNewQuestTimeline] = useState('today')
   
   // Filter state
   const [categoryFilter, setCategoryFilter] = useState('all') // 'all', 'nouvelle_quete', 'update_quete', 'discussion'
@@ -104,63 +110,135 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
   }
 
   const handlePostUpdate = async () => {
-    if (!user?.id || !selectedQuest || !updateText.trim()) {
-      alert('Sélectionne une quête et écris ton update !')
+    if (!user?.id || !updateText.trim() || !postType) {
+      alert('Complète tous les champs requis !')
       return
     }
     
     try {
       setPosting(true)
       
-      const { error } = await supabase
-        .from('quest_updates')
-        .insert({
-          quest_id: selectedQuest,
-          user_id: user.id,
-          update_text: updateText.trim(),
-          visibility: visibility
-        })
-      
-      if (error) throw error
+      if (postType === 'nouvelle_quete') {
+        // Create new quest first
+        if (!newQuestTitle.trim()) {
+          alert('Le titre de la quête est requis !')
+          return
+        }
+        const description = (newQuestDescription.trim() || updateText.trim() || ' ').trim() || 'Ma quête'
+        
+        const { data: newQuest, error: questError } = await supabase
+          .from('quests')
+          .insert({
+            user_id: user.id,
+            created_by: user?.email || 'unknown',
+            title: newQuestTitle.trim(),
+            description: description,
+            category: newQuestCategory,
+            xp_value: { today: 1, 'this week': 7, 'this month': 30, major: 200 }[newQuestTimeline] ?? 1,
+            timeline: newQuestTimeline,
+            status: 'in_progress',
+          })
+          .select()
+          .single()
+        
+        if (questError) throw questError
+        
+        // Quest is automatically announced via AccountPage, no need to create update
+        
+      } else if (postType === 'update_quete') {
+        // Create quest update
+        if (!selectedQuest) {
+          alert('Sélectionne une quête !')
+          return
+        }
+        
+        const { error } = await supabase
+          .from('quest_updates')
+          .insert({
+            quest_id: selectedQuest,
+            user_id: user.id,
+            update_text: updateText.trim(),
+            visibility: 'public'
+          })
+        
+        if (error) throw error
+        
+      } else if (postType === 'discussion') {
+        // Create simple post (discussion)
+        const { error } = await supabase
+          .from('quest_updates')
+          .insert({
+            quest_id: null, // No quest linked
+            user_id: user.id,
+            update_text: updateText.trim(),
+            visibility: 'public'
+          })
+        
+        if (error) throw error
+      }
       
       // Reset form
       setUpdateText('')
       setSelectedQuest(null)
+      setPostType(null)
+      setNewQuestTitle('')
+      setNewQuestDescription('')
+      setNewQuestCategory('fitness')
+      setNewQuestTimeline('today')
       
-      // Reload feed and stats
-      await loadFeed()
+      // Rechargement en arrière-plan sans afficher le loading
+      await loadFeed(false)
+      await loadUserQuests()
       await loadWeeklyStats()
+      
     } catch (error) {
-      console.error('Error posting update:', error)
+      console.error('Error posting:', error)
       alert('Erreur lors de la publication. Réessaie !')
     } finally {
       setPosting(false)
     }
   }
 
-  const loadFeed = async () => {
+  const loadFeed = async (showLoading = true) => {
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
+      
+      // Load who the current user follows (amis)
+      let followingIds = []
+      if (user?.id) {
+        const { data: follows } = await supabase
+          .from('user_follows')
+          .select('following_id')
+          .eq('follower_id', user.id)
+        followingIds = (follows || []).map(f => f.following_id)
+      }
+      // Visible posts = from self + from people we follow
+      const visibleUserIds = new Set([user?.id, ...followingIds].filter(Boolean))
       
       // Load ALL quests from all users (created, in_progress, completed)
-      const { data: allQuests, error } = await supabase
+      const { data: allQuestsRaw, error } = await supabase
         .from('quests')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(100)
       
       if (error) {
         console.error('Error loading feed:', error)
         throw error
       }
       
+      // Filter: only show quests from self or from people we follow
+      const allQuests = (allQuestsRaw || []).filter(q => visibleUserIds.has(q.user_id))
+      
       // Load quest updates
-      const { data: allUpdates, error: updatesError } = await supabase
+      const { data: allUpdatesRaw, error: updatesError } = await supabase
         .from('quest_updates')
         .select('id, quest_id, user_id, update_text, visibility, created_at')
-        .eq('visibility', 'public')
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(100)
+      
+      // Filter: only show updates from self or from people we follow
+      const allUpdates = (allUpdatesRaw || []).filter(u => visibleUserIds.has(u.user_id))
       
       if (updatesError) {
         console.error('Error loading updates:', updatesError)
@@ -412,52 +490,53 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
       return
     }
 
+    const post = feedPosts.find(p => p.id === postId)
+    const hasReacted = post?.userReactions?.[reactionType]
+
+    // Mise à jour instantanée de l'UI (optimistic)
+    const updateReactionInPost = (p, add) => {
+      const counts = { ...p.reactionCounts }
+      const userReactions = { ...p.userReactions }
+      if (add) {
+        counts[reactionType] = (counts[reactionType] || 0) + 1
+        userReactions[reactionType] = true
+      } else {
+        counts[reactionType] = Math.max(0, (counts[reactionType] || 1) - 1)
+        userReactions[reactionType] = false
+      }
+      return { ...p, reactionCounts: counts, userReactions }
+    }
+
+    setFeedPosts(prev => prev.map(p =>
+      p.id === postId ? updateReactionInPost(p, !hasReacted) : p
+    ))
+
     try {
-      const post = feedPosts.find(p => p.id === postId)
-      const hasReacted = post?.userReactions?.[reactionType]
-      
       const isUpdate = postType === 'update'
 
       if (hasReacted) {
-        // Remove reaction
         const deleteQuery = supabase
           .from('quest_reactions')
           .delete()
           .eq('user_id', user.id)
           .eq('reaction_type', reactionType)
-        
         if (isUpdate) {
           deleteQuery.eq('update_id', postId).is('quest_id', null)
         } else {
           deleteQuery.eq('quest_id', postId).is('update_id', null)
         }
-
         const { error } = await deleteQuery
         if (error) throw error
       } else {
-        // Add reaction
-        const insertData = {
-          user_id: user.id,
-          reaction_type: reactionType
-        }
-        
-        if (isUpdate) {
-          insertData.update_id = postId
-        } else {
-          insertData.quest_id = postId
-        }
-
-        const { error } = await supabase
-          .from('quest_reactions')
-          .insert(insertData)
-
+        const insertData = { user_id: user.id, reaction_type: reactionType }
+        if (isUpdate) insertData.update_id = postId
+        else insertData.quest_id = postId
+        const { error } = await supabase.from('quest_reactions').insert(insertData)
         if (error) throw error
       }
-
-      // Reload feed to update counts
-      await loadFeed()
     } catch (error) {
       console.error('Error handling reaction:', error)
+      setFeedPosts(prev => prev.map(p => p.id === postId ? updateReactionInPost(p, hasReacted) : p))
       alert('Erreur lors de la réaction. Réessaie !')
     }
   }
@@ -468,41 +547,71 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
       return
     }
 
-    const comment = newComment[postId]
-    if (!comment?.trim()) {
+    const commentText = newComment[postId]
+    if (!commentText?.trim()) {
       return
     }
 
+    // Clear input immédiatement (optimistic)
+    setNewComment(prev => ({ ...prev, [postId]: '' }))
+
+    const newCommentObj = {
+      id: `temp-${Date.now()}`,
+      userId: user.id,
+      username: profile?.username || user?.email?.split('@')[0] || 'Aventurier',
+      avatar: profile?.avatar_url || null,
+      text: commentText.trim(),
+      createdAt: new Date().toISOString()
+    }
+
+    // Affichage instantané : ajouter le commentaire à l'état local
+    setFeedPosts(prev => prev.map(post => {
+      if (post.id !== postId) return post
+      return {
+        ...post,
+        comments: [...(post.comments || []), newCommentObj]
+      }
+    }))
+
     try {
       const isUpdate = postType === 'update'
-      
       const insertData = {
         user_id: user.id,
-        comment_text: comment.trim()
+        comment_text: commentText.trim()
       }
-      
       if (isUpdate) {
         insertData.update_id = postId
       } else {
         insertData.quest_id = postId
       }
 
-      const { error } = await supabase
+      const { data: inserted, error } = await supabase
         .from('quest_comments')
         .insert(insertData)
+        .select('id, created_at')
+        .single()
 
       if (error) throw error
 
-      // Clear input
-      setNewComment(prev => ({
-        ...prev,
-        [postId]: ''
-      }))
-
-      // Reload feed to show new comment
-      await loadFeed()
+      // Remplacer le commentaire temporaire par le vrai (id serveur)
+      if (inserted) {
+        setFeedPosts(prev => prev.map(post => {
+          if (post.id !== postId) return post
+          return {
+            ...post,
+            comments: (post.comments || []).map(c =>
+              c.id === newCommentObj.id ? { ...c, id: inserted.id, createdAt: inserted.created_at } : c
+            )
+          }
+        }))
+      }
     } catch (error) {
       console.error('Error adding comment:', error)
+      setFeedPosts(prev => prev.map(post => {
+        if (post.id !== postId) return post
+        return { ...post, comments: (post.comments || []).filter(c => c.id !== newCommentObj.id) }
+      }))
+      setNewComment(prev => ({ ...prev, [postId]: commentText }))
       alert('Erreur lors de l\'ajout du commentaire. Réessaie !')
     }
   }
@@ -523,10 +632,19 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
 
   const CATEGORY_EMOJIS = {
     fitness: '💪',
-    social: '🎉',
-    creative: '🎨',
     learning: '📚',
-    wellness: '🧘'
+    career: '💼',
+    creativity: '🎨',
+    wellness: '🧘',
+    social: '👥',
+    creative: '🎨', // backward compat
+  }
+
+  const TIMELINE_LABELS = {
+    today: '⚡ Quotidienne',
+    'this week': '📅 Hebdomadaire',
+    'this month': '🌙 Mensuelle',
+    major: '🎯 Majeure',
   }
 
   return (
@@ -546,16 +664,29 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
         {/* Top Navigation - Matching other pages style */}
         <div className="sticky top-0 z-50 glass-card border-b border-white/30" style={{ paddingTop: '0px', paddingBottom: '0px' }}>
           <div className="flex items-center gap-4" style={{ paddingLeft: '65px', paddingRight: '65px' }}>
-            {/* Left Button - Back to Village Place */}
-            <button
-              onClick={onBackToVillage}
-              className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
-              style={{
-                fontFamily: "'Cinzel Decorative', serif",
-              }}
-            >
-              ← Vers la place du village 🎪
-            </button>
+            {/* Left Buttons - Back to Village Place (only when not on village place) + Grand Registre */}
+            {!isVillagePlace && onBackToVillage && (
+              <button
+                onClick={onBackToVillage}
+                className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
+                style={{
+                  fontFamily: "'Cinzel Decorative', serif",
+                }}
+              >
+                ← Vers la place du village 🎪
+              </button>
+            )}
+            {onOpenRegistry && (
+              <button
+                onClick={onOpenRegistry}
+                className="nav-button px-6 py-2.5 rounded-2xl flex-shrink-0"
+                style={{
+                  fontFamily: "'Cinzel Decorative', serif",
+                }}
+              >
+                Grand Registre 📜
+              </button>
+            )}
             
             {/* Archivus Character */}
             <div className="flex items-center gap-0 relative z-40 flex-1 ml-6">
@@ -602,7 +733,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                     lineHeight: '1.3',
                   }}
                 >
-                  Archivus : Les parchemins affichés ici racontent les derniers exploits des aventuriers du village !
+                  Archivus : Découvre les dernières updates des aventuriers du village : inspire-toi ou laisse un mot d'encouragement !
                 </p>
               </div>
             </div>
@@ -671,16 +802,6 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                 >
                   📜 Fil d'actualités
                 </h2>
-                <p 
-                  className="text-base md:text-lg font-medium italic mb-1"
-                  style={{
-                    fontFamily: "'Cormorant Garamond', serif",
-                    color: '#4b4136',
-                    opacity: 0.7,
-                  }}
-                >
-                  Découvre les updates des aventuriers : inspire-toi ou laisse un mot d'encouragement !
-                </p>
               </div>
 
               {/* Filter Buttons */}
@@ -690,8 +811,8 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                   className="px-4 py-2 rounded-2xl font-semibold text-sm transition-all hover:scale-105 active:scale-95"
                   style={{
                     background: categoryFilter === 'all' 
-                      ? 'linear-gradient(to bottom, rgba(139, 115, 85, 0.9), rgba(101, 84, 62, 0.9))'
-                      : 'rgba(255, 255, 255, 0.85)',
+                      ? 'linear-gradient(to bottom, rgba(139, 115, 85, 1), rgba(101, 84, 62, 1))'
+                      : 'rgba(255, 255, 255, 0.8)',
                     border: categoryFilter === 'all'
                       ? '2px solid rgba(184, 134, 11, 0.6)'
                       : '2px solid rgba(139, 115, 85, 0.3)',
@@ -707,8 +828,8 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                   className="px-4 py-2 rounded-2xl font-semibold text-sm transition-all hover:scale-105 active:scale-95"
                   style={{
                     background: categoryFilter === 'nouvelle_quete'
-                      ? 'linear-gradient(to bottom, rgba(34, 197, 94, 0.9), rgba(22, 163, 74, 0.9))'
-                      : 'rgba(255, 255, 255, 0.85)',
+                      ? 'linear-gradient(to bottom, rgba(34, 197, 94, 1), rgba(22, 163, 74, 1))'
+                      : 'rgba(255, 255, 255, 0.8)',
                     border: categoryFilter === 'nouvelle_quete'
                       ? '2px solid rgba(34, 197, 94, 0.6)'
                       : '2px solid rgba(139, 115, 85, 0.3)',
@@ -717,15 +838,15 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                     boxShadow: categoryFilter === 'nouvelle_quete' ? '0 4px 15px rgba(0, 0, 0, 0.2)' : 'none',
                   }}
                 >
-                  📜 Nouvelle quête ({feedPosts.filter(p => p.type === 'quest').length})
+                  🎯 Nouvelle quête ({feedPosts.filter(p => p.type === 'quest').length})
                 </button>
                 <button
                   onClick={() => setCategoryFilter('update_quete')}
                   className="px-4 py-2 rounded-2xl font-semibold text-sm transition-all hover:scale-105 active:scale-95"
                   style={{
                     background: categoryFilter === 'update_quete'
-                      ? 'linear-gradient(to bottom, rgba(147, 51, 234, 0.9), rgba(109, 40, 217, 0.9))'
-                      : 'rgba(255, 255, 255, 0.85)',
+                      ? 'linear-gradient(to bottom, rgba(147, 51, 234, 1), rgba(109, 40, 217, 1))'
+                      : 'rgba(255, 255, 255, 0.8)',
                     border: categoryFilter === 'update_quete'
                       ? '2px solid rgba(147, 51, 234, 0.6)'
                       : '2px solid rgba(139, 115, 85, 0.3)',
@@ -734,15 +855,15 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                     boxShadow: categoryFilter === 'update_quete' ? '0 4px 15px rgba(0, 0, 0, 0.2)' : 'none',
                   }}
                 >
-                  🎯 Update de quête ({feedPosts.filter(p => p.type === 'update' && p.questTitle).length})
+                  📝 Update de quête ({feedPosts.filter(p => p.type === 'update' && p.questTitle).length})
                 </button>
                 <button
                   onClick={() => setCategoryFilter('discussion')}
                   className="px-4 py-2 rounded-2xl font-semibold text-sm transition-all hover:scale-105 active:scale-95"
                   style={{
                     background: categoryFilter === 'discussion'
-                      ? 'linear-gradient(to bottom, rgba(251, 191, 36, 0.9), rgba(245, 158, 11, 0.9))'
-                      : 'rgba(255, 255, 255, 0.85)',
+                      ? 'linear-gradient(to bottom, rgba(251, 191, 36, 1), rgba(245, 158, 11, 1))'
+                      : 'rgba(255, 255, 255, 0.8)',
                     border: categoryFilter === 'discussion'
                       ? '2px solid rgba(251, 191, 36, 0.6)'
                       : '2px solid rgba(139, 115, 85, 0.3)',
@@ -892,7 +1013,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                 
                 {/* Right Content - Feed (80% width) */}
                 <div className="flex-1">
-              {/* Update Creator */}
+              {/* Post Creator */}
               {user && (
                 <div
                   className="glass-card rounded-2xl p-4 soft-shadow fade-in mb-4"
@@ -902,87 +1023,213 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                     boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
                   }}
                 >
+                  {/* Main Text Input */}
                   <textarea
                     value={updateText}
                     onChange={(e) => setUpdateText(e.target.value)}
-                    placeholder="Qu'as-tu accompli aujourd'hui ?"
+                    placeholder="Partage quelque chose avec le village..."
                     className="w-full px-3 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-400 mb-3"
-                    rows={2}
+                    rows={3}
                     style={{
                       fontFamily: "'Cormorant Garamond', serif",
                       fontSize: '0.95rem',
-                      background: 'rgba(255, 255, 255, 0.8)',
+                      background: 'rgba(255, 255, 255, 1)',
                       border: '1px solid rgba(139, 115, 85, 0.2)',
                       color: '#4b4136',
                       resize: 'none',
                     }}
                   />
                   
-                  {/* Quest Selector (Optional) */}
-                  <div className="mb-3">
-                    <select
-                      value={selectedQuest || ''}
-                      onChange={(e) => setSelectedQuest(e.target.value)}
-                      className="w-full px-3 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm"
-                      style={{
-                        fontFamily: "'Cormorant Garamond', serif",
-                        background: 'rgba(255, 255, 255, 0.8)',
-                        border: '1px solid rgba(139, 115, 85, 0.2)',
-                        color: '#4b4136',
-                      }}
-                    >
-                      <option value="">📝 Post simple (optionnel : lie à une quête)</option>
-                      {userQuests.map(quest => (
-                        <option key={quest.id} value={quest.id}>
-                          🎯 {quest.title} ({quest.status === 'in_progress' ? 'En cours' : 'En attente'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Post Type Selector */}
+                  {!postType ? (
+                    <div className="mb-3">
+                      <p className="text-xs font-semibold mb-2" style={{ fontFamily: "'Cinzel Decorative', serif", color: '#4b4136' }}>
+                        Type de publication :
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setPostType('nouvelle_quete')}
+                          className="flex-1 px-3 py-2 rounded-2xl font-semibold text-sm transition-all hover:scale-105"
+                          style={{
+                            background: 'linear-gradient(to bottom, rgba(34, 197, 94, 1), rgba(22, 163, 74, 1))',
+                            border: '2px solid rgba(34, 197, 94, 0.6)',
+                            color: '#fff',
+                            fontFamily: "'Cinzel Decorative', serif",
+                          }}
+                        >
+                          🎯 Nouvelle quête
+                        </button>
+                        <button
+                          onClick={() => setPostType('update_quete')}
+                          className="flex-1 px-3 py-2 rounded-2xl font-semibold text-sm transition-all hover:scale-105"
+                          style={{
+                            background: 'linear-gradient(to bottom, rgba(147, 51, 234, 1), rgba(109, 40, 217, 1))',
+                            border: '2px solid rgba(147, 51, 234, 0.6)',
+                            color: '#fff',
+                            fontFamily: "'Cinzel Decorative', serif",
+                          }}
+                        >
+                          📝 Update de quête
+                        </button>
+                        <button
+                          onClick={() => setPostType('discussion')}
+                          className="flex-1 px-3 py-2 rounded-2xl font-semibold text-sm transition-all hover:scale-105"
+                          style={{
+                            background: 'linear-gradient(to bottom, rgba(251, 191, 36, 1), rgba(245, 158, 11, 1))',
+                            border: '2px solid rgba(251, 191, 36, 0.6)',
+                            color: '#fff',
+                            fontFamily: "'Cinzel Decorative', serif",
+                          }}
+                        >
+                          💬 Discussion
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Show selected type and allow to change */}
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold" style={{ fontFamily: "'Cinzel Decorative', serif", color: '#4b4136' }}>
+                            Type:
+                          </span>
+                          <span className="px-3 py-1 rounded-2xl text-xs font-semibold" style={{
+                            background: postType === 'nouvelle_quete' ? 'rgba(34, 197, 94, 0.2)' :
+                                       postType === 'update_quete' ? 'rgba(147, 51, 234, 0.2)' :
+                                       'rgba(251, 191, 36, 0.2)',
+                            border: `1px solid ${postType === 'nouvelle_quete' ? 'rgba(34, 197, 94, 0.4)' :
+                                       postType === 'update_quete' ? 'rgba(147, 51, 234, 0.4)' :
+                                       'rgba(251, 191, 36, 0.4)'}`,
+                            color: postType === 'nouvelle_quete' ? '#15803d' :
+                                   postType === 'update_quete' ? '#6b21a8' :
+                                   '#d97706',
+                          }}>
+                            {postType === 'nouvelle_quete' && '🎯 Nouvelle quête'}
+                            {postType === 'update_quete' && '📝 Update de quête'}
+                            {postType === 'discussion' && '💬 Discussion'}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setPostType(null)}
+                          className="text-xs px-2 py-1 rounded-xl hover:bg-white/40 transition-all"
+                          style={{ fontFamily: "'Cormorant Garamond', serif", color: '#4b4136' }}
+                        >
+                          Changer
+                        </button>
+                      </div>
+
+                      {/* Conditional Fields Based on Type */}
+                      {postType === 'nouvelle_quete' && (
+                        <div className="space-y-2 mb-3 p-3 rounded-2xl" style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                          <input
+                            type="text"
+                            value={newQuestTitle}
+                            onChange={(e) => setNewQuestTitle(e.target.value)}
+                            placeholder="Titre de la quête"
+                            className="w-full px-3 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-400 text-sm"
+                            style={{
+                              fontFamily: "'Cormorant Garamond', serif",
+                              background: 'rgba(255, 255, 255, 1)',
+                              border: '1px solid rgba(139, 115, 85, 0.2)',
+                              color: '#4b4136',
+                            }}
+                          />
+                          <textarea
+                            value={newQuestDescription}
+                            onChange={(e) => setNewQuestDescription(e.target.value)}
+                            placeholder="Description de la quête"
+                            className="w-full px-3 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-400 text-sm"
+                            rows={2}
+                            style={{
+                              fontFamily: "'Cormorant Garamond', serif",
+                              background: 'rgba(255, 255, 255, 1)',
+                              border: '1px solid rgba(139, 115, 85, 0.2)',
+                              color: '#4b4136',
+                              resize: 'none',
+                            }}
+                          />
+                          <div className="flex gap-2">
+                            <select
+                              value={newQuestCategory}
+                              onChange={(e) => setNewQuestCategory(e.target.value)}
+                              className="flex-1 px-3 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-400 text-xs"
+                              style={{
+                                fontFamily: "'Cormorant Garamond', serif",
+                                background: 'rgba(255, 255, 255, 1)',
+                                border: '1px solid rgba(139, 115, 85, 0.2)',
+                                color: '#4b4136',
+                              }}
+                            >
+                              <option value="fitness">💪 Sport & Fitness</option>
+                              <option value="learning">📚 Savoir & Apprentissage</option>
+                              <option value="career">💼 Carrière & Travail</option>
+                              <option value="creativity">🎨 Créativité & Projets</option>
+                              <option value="wellness">🧘 Bien-être & Santé</option>
+                              <option value="social">👥 Social & Communauté</option>
+                            </select>
+                          </div>
+                          <select
+                            value={newQuestTimeline}
+                            onChange={(e) => setNewQuestTimeline(e.target.value)}
+                            className="w-full px-3 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-400 text-xs"
+                            style={{
+                              fontFamily: "'Cormorant Garamond', serif",
+                              background: 'rgba(255, 255, 255, 1)',
+                              border: '1px solid rgba(139, 115, 85, 0.2)',
+                              color: '#4b4136',
+                            }}
+                          >
+                            <option value="today">⚡ QUOTIDIENNE = 1 XP/jour</option>
+                            <option value="this week">📅 HEBDOMADAIRE = 7 XP/semaine</option>
+                            <option value="this month">🌙 MENSUELLE = 30 XP/mois</option>
+                            <option value="major">🎯 MAJEURE = 200 XP/quête</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {postType === 'update_quete' && (
+                        <div className="mb-3">
+                          <select
+                            value={selectedQuest || ''}
+                            onChange={(e) => setSelectedQuest(e.target.value)}
+                            className="w-full px-3 py-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm"
+                            style={{
+                              fontFamily: "'Cormorant Garamond', serif",
+                              background: 'rgba(255, 255, 255, 1)',
+                              border: '1px solid rgba(139, 115, 85, 0.2)',
+                              color: '#4b4136',
+                            }}
+                          >
+                            <option value="">Sélectionne une quête</option>
+                            {userQuests.map(quest => (
+                              <option key={quest.id} value={quest.id}>
+                                {quest.title} ({quest.status === 'in_progress' ? 'En cours' : 'En attente'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </>
+                  )}
                   
-                  {/* Visibility & Publish */}
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-wrap">
+                  {/* Publish Button */}
+                  {postType && (
+                    <div className="flex items-center justify-end gap-3">
                       <button
-                        onClick={() => setVisibility('public')}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                          visibility === 'public' ? 'bg-pink-500 text-white' : 'bg-white/60 text-gray-600'
-                        }`}
+                        onClick={handlePostUpdate}
+                        disabled={posting || !updateText.trim() || (postType === 'nouvelle_quete' && !newQuestTitle.trim()) || (postType === 'update_quete' && !selectedQuest)}
+                        className="px-4 py-1.5 rounded-full text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95"
                         style={{
-                          fontFamily: "'Cormorant Garamond', serif",
-                          border: visibility === 'public' ? 'none' : '1px solid rgba(139, 115, 85, 0.2)',
+                          background: 'linear-gradient(to right, #ec4899, #f43f5e)',
+                          color: 'white',
+                          fontFamily: "'Cinzel Decorative', serif",
+                          boxShadow: '0 4px 15px rgba(236, 72, 153, 0.3)',
                         }}
                       >
-                        🌍 Public
-                      </button>
-                      <button
-                        onClick={() => setVisibility('followers')}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                          visibility === 'followers' ? 'bg-pink-500 text-white' : 'bg-white/60 text-gray-600'
-                        }`}
-                        style={{
-                          fontFamily: "'Cormorant Garamond', serif",
-                          border: visibility === 'followers' ? 'none' : '1px solid rgba(139, 115, 85, 0.2)',
-                        }}
-                      >
-                        👥 Abonnés
+                        {posting ? '✨ Publication...' : 'Publier'}
                       </button>
                     </div>
-                    
-                    <button
-                      onClick={handlePostUpdate}
-                      disabled={posting || !updateText.trim()}
-                      className="px-4 py-1.5 rounded-full text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95"
-                      style={{
-                        background: 'linear-gradient(to right, #ec4899, #f43f5e)',
-                        color: 'white',
-                        fontFamily: "'Cinzel Decorative', serif",
-                        boxShadow: '0 4px 15px rgba(236, 72, 153, 0.3)',
-                      }}
-                    >
-                      {posting ? '✨ Publication...' : '✈️ Publier'}
-                    </button>
-                  </div>
+                  )}
                 </div>
               )}
               
@@ -1026,7 +1273,9 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                       )
                     }
 
-                    return filteredPosts.map((post) => {
+                    return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {filteredPosts.map((post) => {
                     // Différencier visuellement les posts simples des updates de quête
                     const isQuestUpdate = post.type === 'update' && post.questTitle
                     const isSimplePost = post.type === 'update' && !post.questTitle
@@ -1105,7 +1354,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                               }}
                             >
                               <span className="text-xs font-semibold" style={{ color: '#6b21a8' }}>
-                                🎯 Update de quête
+                                📝 Update de quête
                               </span>
                             </div>
                           ) : (
@@ -1118,7 +1367,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                               }}
                             >
                               <span className="text-xs font-semibold" style={{ color: '#d97706' }}>
-                                ✨ Partage
+                                💬 Discussion
                               </span>
                             </div>
                           )
@@ -1142,13 +1391,13 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                               }}>
                                 {post.questStatus === 'completed' ? '✅ Complétée' : 
                                  post.questStatus === 'in_progress' ? '🔄 En cours' : 
-                                 '📝 Nouvelle'}
+                                 '🎯 Nouvelle quête'}
                               </span>
                             </div>
                             <div 
                               className="px-3 py-1 rounded-2xl"
                               style={{
-                                background: 'rgba(255, 255, 255, 0.4)',
+                                background: 'rgba(255, 255, 255, 1)',
                                 border: '1px solid rgba(139, 115, 85, 0.2)',
                               }}
                             >
@@ -1165,7 +1414,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                     <div 
                       className="mb-3 p-3 rounded-2xl"
                       style={{
-                        background: 'rgba(255, 255, 255, 0.5)',
+                        background: 'rgba(255, 255, 255, 1)',
                         border: '1px solid rgba(139, 115, 85, 0.2)',
                       }}
                     >
@@ -1247,7 +1496,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                           >
                             {post.questStatus === 'completed' ? '✨ Quête complétée avec succès !' : 
                              post.questStatus === 'in_progress' ? '🔥 En cours de réalisation...' : 
-                             `📅 À réaliser : ${post.questTimeline}`}
+                             `📅 À réaliser : ${TIMELINE_LABELS[post.questTimeline] || post.questTimeline}`}
                           </p>
                         </>
                       )}
@@ -1259,7 +1508,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                         onClick={() => handleReaction(post.id, 'like', post.type)}
                         className="flex items-center gap-1 px-2 py-1 rounded-2xl hover:bg-white/40 transition-all text-sm"
                         style={{
-                          background: post.userReactions?.like ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.3)',
+                          background: post.userReactions?.like ? 'rgba(59, 130, 246, 1)' : 'rgba(255, 255, 255, 1)',
                           border: post.userReactions?.like ? '2px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(139, 115, 85, 0.2)',
                         }}
                       >
@@ -1272,7 +1521,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                         onClick={() => handleReaction(post.id, 'love', post.type)}
                         className="flex items-center gap-1 px-2 py-1 rounded-2xl hover:bg-white/40 transition-all text-sm"
                         style={{
-                          background: post.userReactions?.love ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.3)',
+                          background: post.userReactions?.love ? 'rgba(239, 68, 68, 1)' : 'rgba(255, 255, 255, 1)',
                           border: post.userReactions?.love ? '2px solid rgba(239, 68, 68, 0.5)' : '1px solid rgba(139, 115, 85, 0.2)',
                         }}
                       >
@@ -1285,7 +1534,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                         onClick={() => handleReaction(post.id, 'laugh', post.type)}
                         className="flex items-center gap-1 px-2 py-1 rounded-2xl hover:bg-white/40 transition-all text-sm"
                         style={{
-                          background: post.userReactions?.laugh ? 'rgba(251, 191, 36, 0.3)' : 'rgba(255, 255, 255, 0.3)',
+                          background: post.userReactions?.laugh ? 'rgba(251, 191, 36, 1)' : 'rgba(255, 255, 255, 1)',
                           border: post.userReactions?.laugh ? '2px solid rgba(251, 191, 36, 0.5)' : '1px solid rgba(139, 115, 85, 0.2)',
                         }}
                       >
@@ -1304,7 +1553,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                             key={comment.id}
                             className="p-2 rounded-xl"
                             style={{
-                              background: 'rgba(255, 255, 255, 0.4)',
+                              background: 'rgba(255, 255, 255, 1)',
                               border: '1px solid rgba(139, 115, 85, 0.2)',
                             }}
                           >
@@ -1368,7 +1617,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                         }}
                         className="flex-1 px-3 py-1.5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm"
                         style={{
-                          background: 'rgba(255, 255, 255, 0.6)',
+                          background: 'rgba(255, 255, 255, 1)',
                           border: '1px solid rgba(139, 115, 85, 0.3)',
                           fontFamily: "'Cormorant Garamond', serif",
                           color: '#4b4136',
@@ -1390,7 +1639,9 @@ function FeedPage({ user, onBackToVillage, onBackToCamp }) {
                   </div>
                 </div>
                     )
-                  })
+                  })}
+                    </div>
+                  )
                   })()}
                 </>
               )}
