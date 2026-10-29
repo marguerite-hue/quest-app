@@ -123,14 +123,14 @@ function LoginScreen({ onLogin }) {
       >
         {/* Archivus Character avec bulle de dialogue */}
         <div className="flex items-center gap-0 relative z-40 mb-8 justify-center">
-          <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '130px' }}>
+          <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '180px' }}>
             <img
               src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
               alt="Archivus"
               className="object-cover"
               style={{
-                width: '130px',
-                height: '130px',
+                width: '180px',
+                height: '180px',
                 objectPosition: 'center top',
               }}
               onError={(e) => {
@@ -139,7 +139,7 @@ function LoginScreen({ onLogin }) {
             />
           </div>
           <div 
-            className="relative px-4 py-1 rounded-2xl -ml-4"
+            className="relative px-5 py-2 rounded-2xl -ml-4"
             style={{
               background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
               border: '2px solid rgba(139, 115, 85, 0.3)',
@@ -158,7 +158,7 @@ function LoginScreen({ onLogin }) {
               }}
             ></div>
             <p
-              className="text-base md:text-lg font-medium relative z-10"
+              className="text-xl md:text-2xl font-medium relative z-10"
               style={{
                 fontFamily: "'Cormorant Garamond', serif",
                 color: '#4b4136',
@@ -211,7 +211,7 @@ function LoginScreen({ onLogin }) {
 
         <div className="flex items-center gap-3 mb-6">
           <div className="flex-1 h-px bg-amber-700/30" />
-          <span className="text-sm font-medium" style={{ color: '#4b4136', fontFamily: "'Cormorant Garamond', serif" }}>ou avec ton email</span>
+          <span className="text-xl font-semibold" style={{ color: '#4b4136', fontFamily: "'Cormorant Garamond', serif" }}>ou avec ton email</span>
           <div className="flex-1 h-px bg-amber-700/30" />
         </div>
 
@@ -303,8 +303,7 @@ function LoginScreen({ onLogin }) {
                 style={{
                   fontFamily: "'Cormorant Garamond', serif",
                   color: '#4b4136',
-                  opacity: 0.8,
-                  fontSize: '1.1rem',
+                  fontSize: '1.4rem',
                 }}
               >
                 {isSignUp 
@@ -334,10 +333,9 @@ function LoginScreen({ onLogin }) {
 
         {/* Instructions */}
         <div 
-          className="mt-6 text-center text-sm font-medium"
+          className="mt-6 text-center text-xl font-medium"
           style={{
             color: '#4b4136',
-            opacity: 0.7,
             fontFamily: "'Cormorant Garamond', serif",
           }}
         >
