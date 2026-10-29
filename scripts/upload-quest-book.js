@@ -53,7 +53,7 @@ async function uploadQuestBook(imagePath) {
       if (error.message.includes('Bucket not found')) {
         console.error('❌ Error: Bucket "game-assets" not found!')
         console.error('   Please run: npm run setup:assets')
-        console.error('   Or run CREATE_GAME_ASSETS_BUCKET.sql in Supabase SQL Editor')
+        console.error('   Or run supabase/migrations/20260112112930_create_game_assets_bucket.sql in Supabase SQL Editor')
         process.exit(1)
       }
       throw error

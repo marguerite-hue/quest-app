@@ -25,8 +25,8 @@ export async function setupAssetsBucket() {
       // Return instructions to run SQL manually
       return {
         success: false,
-        message: 'Cannot access storage buckets. Please run CREATE_GAME_ASSETS_BUCKET.sql in Supabase SQL Editor.',
-        sqlFile: 'CREATE_GAME_ASSETS_BUCKET.sql'
+        message: 'Cannot access storage buckets. Please run supabase/migrations/20260112112930_create_game_assets_bucket.sql in Supabase SQL Editor.',
+        sqlFile: 'supabase/migrations/20260112112930_create_game_assets_bucket.sql'
       }
     }
 
@@ -45,10 +45,10 @@ export async function setupAssetsBucket() {
     return {
       success: false,
       message: 'Bucket creation requires admin access. Please run the SQL migration.',
-      sqlFile: 'CREATE_GAME_ASSETS_BUCKET.sql',
+      sqlFile: 'supabase/migrations/20260112112930_create_game_assets_bucket.sql',
       instructions: [
         '1. Go to Supabase Dashboard → SQL Editor',
-        '2. Open CREATE_GAME_ASSETS_BUCKET.sql',
+        '2. Open supabase/migrations/20260112112930_create_game_assets_bucket.sql',
         '3. Copy and paste the SQL into the editor',
         '4. Click Run'
       ]
@@ -85,7 +85,7 @@ export async function verifyAssetsBucket() {
       return {
         exists: false,
         accessible: false,
-        message: 'Bucket "game-assets" does not exist. Please run CREATE_GAME_ASSETS_BUCKET.sql'
+        message: 'Bucket "game-assets" does not exist. Please run supabase/migrations/20260112112930_create_game_assets_bucket.sql'
       }
     }
 

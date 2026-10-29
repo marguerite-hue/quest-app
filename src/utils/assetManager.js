@@ -185,7 +185,7 @@ class AssetManager {
 
   /**
    * Check if bucket exists and provide setup instructions if needed
-   * Note: Bucket creation must be done via SQL (see CREATE_GAME_ASSETS_BUCKET.sql)
+   * Note: Bucket creation must be done via SQL (see supabase/migrations/20260112112930_create_game_assets_bucket.sql)
    */
   async ensureBucket() {
     try {
@@ -194,7 +194,7 @@ class AssetManager {
       
       if (listError) {
         throw new Error(
-          `Cannot access storage buckets. Please run CREATE_GAME_ASSETS_BUCKET.sql in Supabase SQL Editor.`
+          `Cannot access storage buckets. Please run supabase/migrations/20260112112930_create_game_assets_bucket.sql in Supabase SQL Editor.`
         )
       }
 
@@ -202,7 +202,7 @@ class AssetManager {
 
       if (!bucketExists) {
         throw new Error(
-          `Bucket "${BUCKET_NAME}" does not exist. Please run CREATE_GAME_ASSETS_BUCKET.sql in Supabase SQL Editor.`
+          `Bucket "${BUCKET_NAME}" does not exist. Please run supabase/migrations/20260112112930_create_game_assets_bucket.sql in Supabase SQL Editor.`
         )
       }
 
