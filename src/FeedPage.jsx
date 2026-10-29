@@ -660,15 +660,6 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
     >
       {/* Overlay pour améliorer la lisibilité */}
       <div className="absolute inset-0 bg-black/10 z-0"></div>
-      {/* Quadrillage vintage sur le fond */}
-      <div className="fixed inset-0 z-0" style={{
-        backgroundImage: `
-          linear-gradient(0deg, transparent 11px, rgba(139, 115, 85, 0.18) 11px, rgba(139, 115, 85, 0.18) 12px),
-          linear-gradient(90deg, transparent 11px, rgba(139, 115, 85, 0.18) 11px, rgba(139, 115, 85, 0.18) 12px)
-        `,
-        backgroundSize: '12px 12px',
-        pointerEvents: 'none',
-      }}></div>
       <div className="relative z-10">
         {/* Top Navigation - Matching other pages style */}
         <div className="sticky top-0 z-50 glass-card border-b border-white/30" style={{ paddingTop: '0px', paddingBottom: '0px' }}>
@@ -802,11 +793,14 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div className="mb-1 text-center">
-                <h2 
-                  className="text-2xl font-bold mb-0"
+                <h2
+                  className="inline-block text-3xl font-bold mb-0 px-6 py-2 rounded-2xl"
                   style={{
                     fontFamily: "'Cinzel Decorative', serif",
                     color: '#4b4136',
+                    background: 'linear-gradient(to bottom, rgba(250, 240, 230, 1), rgba(245, 235, 220, 1))',
+                    border: '2px solid rgba(139, 115, 85, 0.3)',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
                   }}
                 >
                   📜 Fil d'actualités
@@ -821,7 +815,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
                   style={{
                     background: categoryFilter === 'all' 
                       ? 'linear-gradient(to bottom, rgba(139, 115, 85, 1), rgba(101, 84, 62, 1))'
-                      : 'rgba(255, 255, 255, 0.8)',
+                      : 'rgba(255, 255, 255, 1)',
                     border: categoryFilter === 'all'
                       ? '2px solid rgba(184, 134, 11, 0.6)'
                       : '2px solid rgba(139, 115, 85, 0.3)',
@@ -838,7 +832,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
                   style={{
                     background: categoryFilter === 'nouvelle_quete'
                       ? 'linear-gradient(to bottom, rgba(34, 197, 94, 1), rgba(22, 163, 74, 1))'
-                      : 'rgba(255, 255, 255, 0.8)',
+                      : 'rgba(255, 255, 255, 1)',
                     border: categoryFilter === 'nouvelle_quete'
                       ? '2px solid rgba(34, 197, 94, 0.6)'
                       : '2px solid rgba(139, 115, 85, 0.3)',
@@ -855,7 +849,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
                   style={{
                     background: categoryFilter === 'update_quete'
                       ? 'linear-gradient(to bottom, rgba(147, 51, 234, 1), rgba(109, 40, 217, 1))'
-                      : 'rgba(255, 255, 255, 0.8)',
+                      : 'rgba(255, 255, 255, 1)',
                     border: categoryFilter === 'update_quete'
                       ? '2px solid rgba(147, 51, 234, 0.6)'
                       : '2px solid rgba(139, 115, 85, 0.3)',
@@ -872,7 +866,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
                   style={{
                     background: categoryFilter === 'discussion'
                       ? 'linear-gradient(to bottom, rgba(251, 191, 36, 1), rgba(245, 158, 11, 1))'
-                      : 'rgba(255, 255, 255, 0.8)',
+                      : 'rgba(255, 255, 255, 1)',
                     border: categoryFilter === 'discussion'
                       ? '2px solid rgba(251, 191, 36, 0.6)'
                       : '2px solid rgba(139, 115, 85, 0.3)',
