@@ -114,23 +114,36 @@ function LoginScreen({ onLogin }) {
       <div className="absolute inset-0 bg-black/20 z-0"></div>
       
       <div 
-        className="rounded-3xl p-8 max-w-2xl w-full soft-shadow relative z-10"
+        className="rounded-3xl p-6 max-w-3xl w-full soft-shadow relative z-10"
         style={{
           background: 'linear-gradient(to bottom, rgba(250, 240, 230, 0.95), rgba(245, 235, 220, 0.95))',
           border: '2px solid rgba(139, 115, 85, 0.3)',
           boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
         }}
       >
+        {/* Titre principal */}
+        <div className="text-center mb-2">
+          <h1 
+            className="text-4xl font-bold mb-0"
+            style={{
+              fontFamily: "'Cinzel Decorative', serif",
+              color: '#4b4136',
+            }}
+          >
+            Quest
+          </h1>
+        </div>
+
         {/* Archivus Character avec bulle de dialogue */}
-        <div className="flex items-center gap-0 relative z-40 mb-8 justify-center">
-          <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: '180px' }}>
+        <div className="flex items-center gap-0 relative z-40 mb-4 justify-center">
+          <div className="flex-shrink-0 flex flex-col items-center overflow-hidden" style={{ height: 'clamp(110px, 19vh, 220px)' }}>
             <img
               src="https://uxgejvkoevtexfquafgg.supabase.co/storage/v1/object/public/game-assets/illustrations/archivus-perso.png"
               alt="Archivus"
               className="object-cover"
               style={{
-                width: '180px',
-                height: '180px',
+                width: 'clamp(110px, 19vh, 220px)',
+                height: 'clamp(110px, 19vh, 220px)',
                 objectPosition: 'center top',
               }}
               onError={(e) => {
@@ -158,8 +171,9 @@ function LoginScreen({ onLogin }) {
               }}
             ></div>
             <p
-              className="text-xl md:text-2xl font-medium relative z-10"
+              className="font-medium relative z-10"
               style={{
+                fontSize: '1.2rem',
                 fontFamily: "'Cormorant Garamond', serif",
                 color: '#4b4136',
                 fontStyle: 'italic',
@@ -171,26 +185,13 @@ function LoginScreen({ onLogin }) {
           </div>
         </div>
 
-        {/* Titre principal */}
-        <div className="text-center mb-8">
-          <h1 
-            className="text-4xl font-bold mb-2"
-            style={{
-              fontFamily: "'Cinzel Decorative', serif",
-              color: '#4b4136',
-            }}
-          >
-            Quest
-          </h1>
-        </div>
-
         {/* Bouton Google - bien visible */}
-        <div className="mb-6">
+        <div className="mb-4">
           <button
             type="button"
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="w-full px-8 py-4 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 hover:opacity-95 transition-opacity"
+            className="w-full px-8 py-3 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 hover:opacity-95 transition-opacity"
             style={{
               fontFamily: "'Cinzel Decorative', serif",
               background: '#4285F4',
@@ -209,19 +210,19 @@ function LoginScreen({ onLogin }) {
           </button>
         </div>
 
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 h-px bg-amber-700/30" />
           <span className="text-xl font-semibold" style={{ color: '#4b4136', fontFamily: "'Cormorant Garamond', serif" }}>ou avec ton email</span>
           <div className="flex-1 h-px bg-amber-700/30" />
         </div>
 
         {/* Formulaire */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Champ pseudo - uniquement en mode inscription */}
           {isSignUp && (
             <div>
               <label 
-                className="block text-lg font-semibold mb-2"
+                className="block text-lg font-semibold mb-1"
                 style={{
                   fontFamily: "'Cinzel Decorative', serif",
                   color: '#4b4136',
@@ -235,7 +236,7 @@ function LoginScreen({ onLogin }) {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Ex: Aventurier123"
                 required={isSignUp}
-                className="w-full px-4 py-3 rounded-3xl text-lg focus:outline-none focus:ring-2 focus:ring-amber-600"
+                className="w-full px-4 py-2.5 rounded-3xl text-lg focus:outline-none focus:ring-2 focus:ring-amber-600"
                 style={{
                   background: 'rgba(255, 255, 255, 0.6)',
                   border: '2px solid rgba(139, 115, 85, 0.3)',
@@ -248,7 +249,7 @@ function LoginScreen({ onLogin }) {
           
           <div>
             <label 
-              className="block text-lg font-semibold mb-2"
+              className="block text-lg font-semibold mb-1"
               style={{
                 fontFamily: "'Cinzel Decorative', serif",
                 color: '#4b4136',
@@ -262,7 +263,7 @@ function LoginScreen({ onLogin }) {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="ton@email.com"
               required
-              className="w-full px-4 py-3 rounded-3xl text-lg focus:outline-none focus:ring-2 focus:ring-amber-600"
+              className="w-full px-4 py-2.5 rounded-3xl text-lg focus:outline-none focus:ring-2 focus:ring-amber-600"
               style={{
                 background: 'rgba(255, 255, 255, 0.6)',
                 border: '2px solid rgba(139, 115, 85, 0.3)',
@@ -277,7 +278,7 @@ function LoginScreen({ onLogin }) {
             <button
               type="submit"
               disabled={loading}
-              className="nav-button w-full px-8 py-4 rounded-3xl font-semibold text-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="nav-button w-full px-8 py-3 rounded-3xl font-semibold text-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 fontFamily: "'Cinzel Decorative', serif",
               }}
@@ -333,7 +334,7 @@ function LoginScreen({ onLogin }) {
 
         {/* Instructions */}
         <div 
-          className="mt-6 text-center text-xl font-medium"
+          className="mt-3 text-center text-xl font-medium"
           style={{
             color: '#4b4136',
             fontFamily: "'Cormorant Garamond', serif",
