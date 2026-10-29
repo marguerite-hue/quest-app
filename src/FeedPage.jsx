@@ -660,6 +660,15 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
     >
       {/* Overlay pour améliorer la lisibilité */}
       <div className="absolute inset-0 bg-black/10 z-0"></div>
+      {/* Quadrillage vintage sur le fond */}
+      <div className="fixed inset-0 z-0" style={{
+        backgroundImage: `
+          linear-gradient(0deg, transparent 11px, rgba(139, 115, 85, 0.18) 11px, rgba(139, 115, 85, 0.18) 12px),
+          linear-gradient(90deg, transparent 11px, rgba(139, 115, 85, 0.18) 11px, rgba(139, 115, 85, 0.18) 12px)
+        `,
+        backgroundSize: '12px 12px',
+        pointerEvents: 'none',
+      }}></div>
       <div className="relative z-10">
         {/* Top Navigation - Matching other pages style */}
         <div className="sticky top-0 z-50 glass-card border-b border-white/30" style={{ paddingTop: '0px', paddingBottom: '0px' }}>
@@ -885,7 +894,7 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
                 <div
                   className="glass-card rounded-3xl p-5 soft-shadow fade-in"
                   style={{
-                    background: 'linear-gradient(135deg, rgba(255, 240, 245, 0.95), rgba(240, 230, 255, 0.95))',
+                    background: 'linear-gradient(135deg, rgba(255, 240, 245, 1), rgba(240, 230, 255, 1))',
                     border: '2px solid rgba(147, 51, 234, 0.3)',
                     boxShadow: '0 8px 32px rgba(147, 51, 234, 0.1)',
                   }}
@@ -1302,15 +1311,6 @@ function FeedPage({ user, onBackToVillage, onBackToCamp, isVillagePlace, onOpenR
                       : 'inset 0 0 20px rgba(139, 115, 85, 0.1), 0 8px 32px rgba(0,0,0,0.1)',
                   }}
                 >
-                  {/* Parchemin texture effect */}
-                  <div className="absolute inset-0 opacity-10 rounded-2xl" style={{
-                    backgroundImage: `
-                      repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139, 115, 85, 0.1) 2px, rgba(139, 115, 85, 0.1) 4px),
-                      repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(139, 115, 85, 0.1) 2px, rgba(139, 115, 85, 0.1) 4px)
-                    `,
-                    pointerEvents: 'none',
-                  }}></div>
-
                   <div className="relative z-10">
                     {/* Post Header */}
                     <div className="flex items-center gap-2 mb-3">

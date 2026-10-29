@@ -2,7 +2,7 @@
 
 /* Navigation Button - Reusable across app */
 .nav-button {
-  background: linear-gradient(135deg, rgba(139, 115, 85, 0.9), rgba(101, 84, 62, 0.9));
+  background: linear-gradient(135deg, rgba(139, 115, 85, 1), rgba(101, 84, 62, 1));
   border: 3px solid rgba(184, 134, 11, 0.6);
   box-shadow: 
     0 4px 15px rgba(0, 0, 0, 0.2),
@@ -29,7 +29,7 @@
 }
 
 .nav-button:hover {
-  background: linear-gradient(135deg, rgba(160, 130, 100, 0.95), rgba(120, 100, 75, 0.95));
+  background: linear-gradient(135deg, rgba(160, 130, 100, 1), rgba(120, 100, 75, 1));
   border-color: rgba(184, 134, 11, 0.8);
   box-shadow: 
     0 6px 20px rgba(0, 0, 0, 0.3),
